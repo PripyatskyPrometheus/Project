@@ -1,6 +1,5 @@
 # FeatureEngineering.py
 
-import duckdb
 import pandas as pd
 import time
 import os
@@ -67,7 +66,7 @@ def process_logon_file(labeled_file_path):
         logon_has_bad=('is_true_bad', 'max')
     ).reset_index()
     
-    print(f"  Время: {time.time()-start:.1f} сек | {len(result)} записей")
+    print(f"  Время: {time.time()-start} сек | {len(result)} записей")
     return result
 
 def save_checkpoint(df, filename, output_dir="D:/dataset/"):
@@ -99,7 +98,7 @@ def process_device_file(labeled_file_path):
         device_has_bad=('is_true_bad', 'max')
     ).reset_index()
     
-    print(f"  Время: {time.time()-start:.1f} сек | {len(result)} записей")
+    print(f"  Время: {time.time()-start} сек | {len(result)} записей")
     return result
 
 def merge_two_features(df_left, df_right, left_name, right_name):
@@ -151,7 +150,7 @@ def process_email_file(labeled_file_path):
         email_has_bad=('is_true_bad', 'max')
     ).reset_index()
     
-    print(f"  Время: {time.time()-start:.1f} сек | {len(result)} записей")
+    print(f"  Время: {time.time()-start} сек | {len(result)} записей")
     return result
 
 def process_file_file(file_path):
@@ -187,7 +186,7 @@ def process_file_file(file_path):
         file_has_bad=('is_true_bad', 'max')
     ).reset_index()
     
-    print(f"  Время: {time.time()-start:.1f} сек | {len(result)} записей")
+    print(f"  Время: {time.time()-start} сек | {len(result)} записей")
     return result
 
 def add_ldap_features(features_df, ldap_path):
@@ -276,7 +275,7 @@ def process_http_file(file_path):
         http_has_bad=('is_true_bad', 'max')
     ).reset_index()
     
-    print(f"  Время: {time.time()-start:.1f} сек | {len(result)} записей")
+    print(f"  Время: {time.time()-start} сек | {len(result)} записей")
     return result
 
 def add_psychometric_features(features_df, psycho_path):
