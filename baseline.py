@@ -118,23 +118,57 @@ print(f"Из них functional_unit: {len(func_cols)}")
 
 # Оставляем только безопасные признаки
 safe_features = [col for col in feature_cols if col not in bad_features]
-X = df[safe_features].fillna(0)
-y = df['has_anomaly']
+# X = df[safe_features].fillna(0)
+# y = df['has_anomaly']
 
-print(f"Признаков после кодирования: {X.shape[1]}")
+# Нормируем признаки, связанные с активностью, чтобы не случился перекос в сторону активных.
+df['logon_night_ratio'] = df['logon_night'] / (df['logon_total'] + 1)
+df['device_night_ratio'] = df['device_night'] / (df['device_total'] + 1)
+df['http_night_ratio'] = df['http_night'] / (df['http_total'] + 1)
+df['email_night_ratio'] = df['email_night'] / (df['email_total'] + 1)
+df['sensitive_ratio'] = df['sensitive_files'] / (df['file_total'] + 1)
+df['external_ratio'] = df['email_external'] / (df['email_total'] + 1)
+df['attachment_ratio'] = df['emails_with_attachments'] / (df['email_total'] + 1)
 
-# Разделяем данные
-X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
-X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42, stratify=y_temp)
+safe_features.extend(['logon_night_ratio', 'device_night_ratio', 'http_night_ratio', 
+                      'email_night_ratio', 'sensitive_ratio', 'external_ratio', 'attachment_ratio'])
 
-print(f"\nTrain: {len(X_train)} ({y_train.mean()*100}% аномалий)")
-print(f"Val: {len(X_val)} ({y_val.mean()*100}% аномалий)")
-print(f"Test: {len(X_test)} ({y_test.mean()*100}% аномалий)")
+# Разделяем по пользователям
+unique_users = df['user'].unique()
+train_users, test_users = train_test_split(unique_users, test_size=0.3, random_state=42)
+
+X_train = df[df['user'].isin(train_users)]
+X_test = df[df['user'].isin(test_users)]
+
+y_train = X_train['has_anomaly']
+y_test = X_test['has_anomaly']
+
+X_train = X_train[safe_features].fillna(0)
+X_test = X_test[safe_features].fillna(0)
+
+print(f"\nTrain: {len(train_users)} пользователей, {len(X_train)} строк, {y_train.mean()*100}% аномалий")
+print(f"Test: {len(test_users)} пользователей, {len(X_test)} строк, {y_test.mean()*100}% аномалий")
+
+train_users, val_users = train_test_split(train_users, test_size=0.2, random_state=42)
+
+X_train_final = df[df['user'].isin(train_users)]
+X_val = df[df['user'].isin(val_users)]
+
+y_train_final = X_train_final['has_anomaly']
+y_val = X_val['has_anomaly']
+
+X_train_final = X_train_final[safe_features].fillna(0)
+X_val = X_val[safe_features].fillna(0)
+
+print(f"Train final: {len(train_users)} пользователей, {len(X_train_final)} строк")
+print(f"Val: {len(val_users)} пользователей, {len(X_val)} строк")
+
+print(f"Итого признаков для обучения после кодирования: {X_train_final}")
 
 print("\nLOGISTIC REGRESSION")
 
 lr = LogisticRegression(class_weight='balanced', max_iter=2000, random_state=42)
-lr.fit(X_train, y_train)
+lr.fit(X_train_final, y_train_final)
 
 y_pred_lr = lr.predict(X_test)
 y_proba_lr = lr.predict_proba(X_test)[:, 1]
@@ -152,7 +186,7 @@ print(f"AUPRC: {auprc_lr}")
 print("\nRANDOM FOREST")
 
 rf = RandomForestClassifier(n_estimators=100, class_weight='balanced', random_state=42, max_depth=10, n_jobs=-1)
-rf.fit(X_train, y_train)
+rf.fit(X_train_final, y_train_final)
 
 y_proba_rf = rf.predict_proba(X_test)[:, 1]
 y_pred_rf = rf.predict(X_test)
@@ -174,9 +208,11 @@ print(importance.head(15))
 
 print("\nXGBOOST")
 
-xgb = XGBClassifier(n_estimators=50, max_depth=4, learning_rate=0.05, scale_pos_weight=330, random_state=42, eval_metric='logloss', 
+scale_pos_weight = (y_train_final == 0).sum() / (y_train_final == 1).sum()
+
+xgb = XGBClassifier(n_estimators=50, max_depth=4, learning_rate=0.05, scale_pos_weight=scale_pos_weight, random_state=42, eval_metric='logloss', 
                     reg_lambda=1.0, reg_alpha=0.5)
-xgb.fit(X_train, y_train)
+xgb.fit(X_train_final, y_train_final)
 
 y_proba_xgb = xgb.predict_proba(X_test)[:, 1]
 y_pred_xgb = xgb.predict(X_test)
@@ -193,7 +229,7 @@ print(f"AUPRC: {auprc_xgb}")
 
 print("\nISOLATION FOREST")
  
-X_train_normal = X_train[y_train == 0]
+X_train_normal = X_train_final[y_train_final == 0]
 
 iso = IsolationForest(n_estimators=100, contamination=0.003, random_state=42)
 iso.fit(X_train_normal)

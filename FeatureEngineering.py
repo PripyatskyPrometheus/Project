@@ -8,21 +8,16 @@ from pathlib import Path
 from labels import load_all_true_bad_ids
 
 def load_insiders(answers_path):
-    """
-    Загружает данные об инсайдерах из answers
-    """
+
     insiders = pd.read_csv(os.path.join(answers_path, "insiders.csv"))
     insiders_df = insiders[insiders['dataset'] == 4.2].copy()
     
-    print(f"=== Инсайдеры в наборе данных CERT r4.2 ===")
+    print(f"Инсайдеры в наборе данных CERT r4.2")
     print(f"Количество: {len(insiders_df)}")
     
     return insiders_df
 
 def get_insider_labels(insiders_df):
-    """
-    Преобразует в словарь
-    """
     insiders_df['start'] = pd.to_datetime(insiders_df['start'])
     insiders_df['end'] = pd.to_datetime(insiders_df['end'])
     
