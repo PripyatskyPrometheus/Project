@@ -155,7 +155,7 @@ def add_labels_to_http(input_file, output_file, all_bad_ids):
                 
                 if total_lines % 1000000 == 0:
                     elapsed = time.time() - start_time
-                    print(f"  Обработано {total_lines:,} строк... ({elapsed:.1f} сек)")
+                    print(f"  Обработано {total_lines} строк... ({elapsed} сек)")
                 
                 parts = line.strip().split(',')
                 if len(parts) < 1:
@@ -171,9 +171,9 @@ def add_labels_to_http(input_file, output_file, all_bad_ids):
                 
                 f_out.write(line.strip() + f',{is_bad}\n')
     
-    print(f"\nОбработано строк: {total_lines:,}")
+    print(f"\nОбработано строк: {total_lines}")
     print(f"Найдено плохих действий: {bad_count}")
-    print(f"Время: {time.time() - start_time:.1f} сек")
+    print(f"Время: {time.time() - start_time} сек")
     
     return total_lines, bad_count
 
@@ -195,7 +195,7 @@ def add_labels_to_email(input_file, output_file, all_bad_ids):
                 total_lines += 1
                 
                 if total_lines % 500000 == 0:
-                    print(f"  Обработано {total_lines:,} строк...")
+                    print(f"  Обработано {total_lines} строк...")
                 
                 parts = line.strip().split(',')
                 if len(parts) < 1:
@@ -211,9 +211,9 @@ def add_labels_to_email(input_file, output_file, all_bad_ids):
                 
                 f_out.write(line.strip() + f',{is_bad}\n')
     
-    print(f"\nОбработано строк: {total_lines:,}")
+    print(f"\nОбработано строк: {total_lines}")
     print(f"Найдено плохих действий: {bad_count}")
-    print(f"Время: {time.time() - start_time:.1f} сек")
+    print(f"Время: {time.time() - start_time} сек")
     
     return total_lines, bad_count
 
@@ -236,7 +236,7 @@ def add_labels_to_file(input_file, output_file, all_bad_ids):
                 total_lines += 1
                 
                 if total_lines % 50000 == 0:
-                    print(f"  Обработано {total_lines:,} строк...")
+                    print(f"  Обработано {total_lines} строк...")
                 
                 parts = line.strip().split(',')
                 if len(parts) < 1:
@@ -252,9 +252,9 @@ def add_labels_to_file(input_file, output_file, all_bad_ids):
                 
                 f_out.write(line.strip() + f',{is_bad}\n')
     
-    print(f"\nОбработано строк: {total_lines:,}")
+    print(f"\nОбработано строк: {total_lines}")
     print(f" Найдено плохих действий: {bad_count}")
-    print(f" Время: {time.time() - start_time:.1f} сек")
+    print(f" Время: {time.time() - start_time} сек")
     
     return total_lines, bad_count
 
