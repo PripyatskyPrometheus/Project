@@ -357,6 +357,16 @@ p_iso, r_iso, f1_iso, _ = precision_recall_fscore_support(y_test, y_pred_iso_bin
 auroc_iso = roc_auc_score(y_test, y_proba_iso)
 auprc_iso = average_precision_score(y_test, y_proba_iso)
 
+# Для Logistic Regression
+plot_model_evaluation(
+    y_test=y_test,
+    y_proba=y_test_proba,
+    y_pred=y_test_pred,
+    model_name="Isolation Forest",
+    auprc=auprc_iso,
+    auroc=auroc_iso
+)
+
 print(f"Precision: {p_iso}")
 print(f"Recall: {r_iso}")
 print(f"F1: {f1_iso}")

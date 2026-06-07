@@ -34,11 +34,6 @@ def get_insider_labels(insiders_df):
     return labels
 
 def process_logon_file(labeled_file_path):
-    """
-    Агрегирует logon_labeled_v2.csv в признаки по дням
-    Возвращает DataFrame с колонками: user, day, logon_total, logon_unique_pcs, 
-    logon_night, logon_weekend, logons, logoffs, logon_bad, logon_has_bad
-    """
     print("\nАГРЕГАЦИЯ LOGON")
     start = time.time()
     
