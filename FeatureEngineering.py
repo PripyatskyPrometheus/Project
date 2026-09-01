@@ -339,7 +339,7 @@ if __name__ == "__main__":
 
     # После добавления LDAP и психометрики
     domain_features = pd.read_csv("D:/dataset/domain_features.csv")
-
+    
     # Объединяем
     combined = combined.merge(domain_features, on='user', how='left')
 
@@ -359,5 +359,4 @@ if __name__ == "__main__":
     print(f"Колонки: {list(combined.columns)}")
     print(f"Всего записей: {len(combined)}")
     print(f"Инсайдерских записей (по старым меткам): {combined['is_insider'].sum()}")
-    print(f"Записей с реальными плохими действиями: {(combined['logon_has_bad'] + combined['device_has_bad']
-            + combined['email_has_bad'] + combined['file_has_bad'] + combined['http_has_bad'] > 0).sum()}")
+    print(f"Записей с реальными плохими действиями: {(combined['logon_has_bad'] + combined['device_has_bad'] + combined['email_has_bad'] + combined['file_has_bad'] + combined['http_has_bad'] > 0).sum()}")

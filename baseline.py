@@ -120,7 +120,7 @@ exclude_cols = [
     
     # Другие потенциальные утечки
     'bad_http', 'logon_bad', 'device_bad', 'http_bad', 'email_bad', 'file_bad',
-    'logon_has_bad', 'device_has_bad', 'http_has_bad', 'email_has_bad', 'file_has_bad',
+    'logon_has_bad', 'device_has_bad', 'http_has_bad', 'email_has_bad', 'file_has_bad', 'total_bad',
 ]
 
 # Категориальные колонки кодируем
