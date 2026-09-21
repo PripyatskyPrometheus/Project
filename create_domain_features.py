@@ -46,7 +46,6 @@ if unknown_percent > 5:
 
 # 5. ПРОВЕРКА НА ПУСТЫЕ URL
 print("\n5. Проверка на пустые URL:")
-print("-" * 40)
 
 empty_urls = http_df['url'].isna().sum()
 empty_urls_percent = empty_urls / len(http_df) * 100
@@ -63,8 +62,7 @@ print("\n7. Статистика по пользователям:")
 # Группируем по пользователю
 user_stats = http_df.groupby('user').agg(
     total_requests=('url', 'count'),
-    unique_domains=('domain', 'nunique'),
-    total_bad=('is_true_bad', 'sum')
+    unique_domains=('domain', 'nunique')
 ).reset_index()
 
 print(f"   Всего пользователей: {len(user_stats)}")
@@ -78,14 +76,6 @@ top_users = user_stats.nlargest(5, 'total_requests')
 print("\n   Топ-5 по числу запросов:")
 for _, row in top_users.iterrows():
     print(f"    {row['user']}: {row['total_requests']} запросов, {row['unique_domains']} доменов")
-
-bad_users = user_stats[user_stats['total_bad'] > 0].nlargest(5, 'total_bad')
-if len(bad_users) > 0:
-    print("\n   Топ-5 по числу вредоносных HTTP-действий:")
-    for _, row in bad_users.iterrows():
-        print(f"     {row['user']}: {row['total_bad']} плохих действий")
-else:
-    print("   Нет пользователей с вредоносными HTTP-действиями")
 
 print("\n9. Сохранение результата:")
 
@@ -104,7 +94,6 @@ print(f"""
 'unknown' доменов:    {unknown_count} ({unknown_percent:.2f}%)
 Пустых URL:           {empty_urls} ({empty_urls_percent:.2f}%)
 Среднее запросов:     {user_stats['total_requests'].mean():.1f}
-Вредоносных действий: {user_stats['total_bad'].sum()}
 """)
 
 if unknown_percent > 5:
