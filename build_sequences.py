@@ -12,7 +12,7 @@ print("ПЕРВЫЙ ЭТАП: ЗАГРУЗКА РАЗМЕЧЕННЫХ ЛОГОВ
 start = time.time()
 
 def download_type(number, type_name, data_path, cols):
-    print(f"\n{number}. Загрузка {type_name}_labeled.csv...")
+    print(f"\n{number}. Загрузка {type_name}_labeled.csv")
     df = pd.read_csv(data_path + f"{type_name}_labeled.csv", usecols=cols)
     print(f"Количество строк: {len(df)}")
     return df
@@ -36,7 +36,6 @@ for name, df in [('logon', logon), ('device', device), ('email', email), ('file'
 
 print(f"Время: {time.time()-start} секунд")
 
-
 print("\nТРЕТИЙ ЭТАП: ПОИСК СЕССИЙ")
 
 start = time.time()
@@ -47,7 +46,6 @@ logon_clean['activity'] = logon_clean['activity'].str.strip()
 print(f"Строк с Logon и Logoff {len(logon_clean)} штук")
 
 logon_clean = logon_clean.sort_values(['user', 'parsed_date'])
-
 
 sessions = []
 current_user = None
@@ -91,22 +89,19 @@ print("\nЧЕТВЁРТЫЙ ЭТАП: ГРУППИРОВКА ПО ПОЛЬЗОВ
 
 start = time.time()
 
-http_by_user = {user: group.sort_values('parsed_date').reset_index(drop=True) 
-                for user, group in http.groupby('user')}
+http_by_user = {user: group.sort_values('parsed_date').reset_index(drop=True) for user, group in http.groupby('user')}
 print(f"http сгруппирован")
 print(f"Время: {time.time()-start} секунд")
 
 start = time.time()
 
-device_by_user = {user: group.sort_values('parsed_date').reset_index(drop=True) 
-                  for user, group in device.groupby('user')}
+device_by_user = {user: group.sort_values('parsed_date').reset_index(drop=True) for user, group in device.groupby('user')}
 print(f"device сгруппирован")
 print(f"Время: {time.time()-start} секунд")
 
 start = time.time()
 
-file_by_user = {user: group.sort_values('parsed_date').reset_index(drop=True) 
-                for user, group in file.groupby('user')}
+file_by_user = {user: group.sort_values('parsed_date').reset_index(drop=True) for user, group in file.groupby('user')}
 print(f"file сгруппирован")
 print(f"Время: {time.time()-start} секунд")
 
@@ -127,7 +122,6 @@ def get_actions_in_session(session, device_by_user, http_by_user, file_by_user, 
     
     actions.append(('logon', start, 0))
     
-    # Device — быстрый поиск через searchsorted
     if user in device_by_user:
         d = device_by_user[user]
         start_idx = d['parsed_date'].searchsorted(start)
@@ -136,7 +130,6 @@ def get_actions_in_session(session, device_by_user, http_by_user, file_by_user, 
             act = 'device_connect' if 'Connect' in str(row['activity']) else 'device_disconnect'
             actions.append((act, row['parsed_date'], row['is_true_bad']))
     
-    # HTTP — быстрый поиск через searchsorted
     if user in http_by_user:
         h = http_by_user[user]
         start_idx = h['parsed_date'].searchsorted(start)
@@ -159,7 +152,6 @@ def get_actions_in_session(session, device_by_user, http_by_user, file_by_user, 
                 act = 'http_other'
             actions.append((act, row['parsed_date'], row['is_true_bad']))
     
-    # File — быстрый поиск через searchsorted
     if user in file_by_user:
         f = file_by_user[user]
         start_idx = f['parsed_date'].searchsorted(start)
@@ -179,7 +171,6 @@ def get_actions_in_session(session, device_by_user, http_by_user, file_by_user, 
                 act = 'file_other'
             actions.append((act, row['parsed_date'], row['is_true_bad']))
     
-    # Email — быстрый поиск через searchsorted
     if user in email_by_user:
         e = email_by_user[user]
         start_idx = e['parsed_date'].searchsorted(start)
@@ -191,7 +182,7 @@ def get_actions_in_session(session, device_by_user, http_by_user, file_by_user, 
                 act = 'email_internal'
             actions.append((act, row['parsed_date'], row['is_true_bad']))
             
-            if row['attachments'] > 0:
+            if pd.to_numeric(row['attachments'], errors='coerce') > 0:
                 actions.append(('email_attach', row['parsed_date'], row['is_true_bad']))
             
             hour = row['parsed_date'].hour
@@ -200,11 +191,10 @@ def get_actions_in_session(session, device_by_user, http_by_user, file_by_user, 
     
     actions.append(('logoff', end, 0))
     
-    # Сортируем по времени
+    # сортировка по времени
     actions.sort(key=lambda x: x[1])
     
     return actions
-
 
 print(f"Обработка  {len(sessions_df)} сессий:")
 start = time.time()
