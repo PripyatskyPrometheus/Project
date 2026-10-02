@@ -11,13 +11,23 @@ print("КОДИРОВАНИЕ ТОКЕНОВ И ПОДГОТОВКА ДАННЫ�
 print("\n1. Загрузка последовательностей из sequences.csv")
 df = pd.read_csv("D:/dataset/sequences.csv")
 df['sequence'] = df['sequence'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
+
+df = df.drop(columns=['session_id'], errors='ignore')
+
+assert df['has_anomaly'].isna().sum() == 0, "has_anomaly содержит NaN!!!"
+df['has_anomaly'] = df['has_anomaly'].astype(int)
+print(f"has_anomaly dtype: {df['has_anomaly'].dtype}, NaN: 0")
+
 print(f"Всего сессий: {len(df)}")
 print(f"Аномальных: {df['has_anomaly'].sum()} ({df['has_anomaly'].mean()*100:.2f}%)")
+
+print(df.head())
 
 print("\n2. Создание словаря токенов")
 
 all_tokens = [token for seq in df['sequence'] for token in seq]
 unique_tokens = sorted(set(all_tokens))
+
 print(f"Уникальных токенов: {len(unique_tokens)}")
 print(f"Токены: {unique_tokens}")
 
@@ -61,7 +71,7 @@ token_weights = {
     'UNK': 0.0
 }
 
-# Создаём массив весов для каждого ID
+# Массив весов для каждого ID
 weights_array = np.ones(len(token_to_id))
 for token, weight in token_weights.items():
     if token in token_to_id:
@@ -90,10 +100,20 @@ def pad_sequence(seq, max_len=MAX_LEN):
     else:
         return seq + [PAD_ID] * (max_len - len(seq))
 
-df['padded'] = df['encoded'].apply(lambda x: pad_sequence(x))
+df['padded'] = df['encoded'].apply(lambda x: np.array(pad_sequence(x), dtype=np.int32))
+
+def mask_for_pad(seq, max_len=MAX_LEN):
+    real = min(len(seq), max_len)
+    return [1] * real + [0] * (max_len - real)
+
+df['mask'] = df['encoded'].apply(lambda x: mask_for_pad(x))
+
+truncated = (df['encoded_length'] > MAX_LEN).sum()
+print(f"\nСессий длиннее {MAX_LEN}: {truncated} ({truncated/len(df)*100:.2f}%)")
+print(f"Максимальная длина: {df['encoded_length'].max()}")
 
 sample = df.iloc[0]['padded']
-print(f"Пример: {sample[:10]}...")
+print(f"Пример: {sample[:10]}")
 print(f"Длина после padding: {len(sample)}")
 
 print("\n6. Разделение на train/val/test по пользователям")
@@ -105,6 +125,19 @@ train_users, val_users = train_test_split(train_users, test_size=0.2, random_sta
 train_df = df[df['user'].isin(train_users)]
 val_df = df[df['user'].isin(val_users)]
 test_df = df[df['user'].isin(test_users)]
+
+n_neg = (train_df['has_anomaly'] == 0).sum()
+n_pos = (train_df['has_anomaly'] == 1).sum()
+pos_weight = n_neg / n_pos
+print(f"\nМножитель штрафа за пропуск аномалий (pos_weight): {pos_weight:.1f}")
+np.save("D:/dataset/pos_weight.npy", np.array([pos_weight]))
+print(f"Сохранено: D:/dataset/pos_weight.npy")
+
+user_anomalies = df.groupby('user')['has_anomaly'].sum()
+print(f"\nПользователей с аномалиями: {(user_anomalies > 0).sum()} из {df['user'].nunique()}")
+print(f"Максимум аномалий у одного пользователя: {user_anomalies.max()}")
+print(f"Топ-5 пользователей по аномалиям:")
+print(user_anomalies.sort_values(ascending=False).head(5))
 
 print(f"\nTrain: {len(train_df)} сессий ({train_df['has_anomaly'].sum()} аномалий)")
 print(f"Val: {len(val_df)} сессий ({val_df['has_anomaly'].sum()} аномалий)")
