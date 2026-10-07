@@ -14,7 +14,6 @@ import warnings
 
 warnings.filterwarnings('ignore')
 
-
 def print_metrics(name, y_true, y_pred, y_proba, dataset_type="Test"):
     p, r, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='binary')
     auroc = roc_auc_score(y_true, y_proba)
@@ -172,6 +171,9 @@ df['sensitive_ratio'] = df['sensitive_files'] / (df['file_total'] + 1)
 df['external_ratio'] = df['email_external'] / (df['email_total'] + 1)
 df['attachment_ratio'] = df['email_with_attachments'] / (df['email_total'] + 1)
 
+df.to_csv("D:/dataset/features_with_ratios.csv", index=False)
+print("Сохранён D:/dataset/features_with_ratios.csv (для eda.py)")
+
 safe_features.extend(['logon_night_ratio', 'device_night_ratio', 'http_night_ratio', 
                       'email_night_ratio', 'sensitive_ratio', 'external_ratio', 'attachment_ratio'])
 
@@ -200,7 +202,6 @@ print(f"\nTrain: {len(train_users)} пользователей, {len(X_train)} �
 print(f"Val:   {len(val_users)} пользователей, {len(X_val)} строк, {y_val.mean()*100}% аномалий")
 print(f"Test:  {len(test_users)} пользователей, {len(X_test)} строк, {y_test.mean()*100}% аномалий")
 
-# Проверка пересечения
 print(f"\nПересечение train/val: {len(set(train_users) & set(val_users))}")
 print(f"Пересечение train/test: {len(set(train_users) & set(test_users))}")
 print(f"Пересечение val/test: {len(set(val_users) & set(test_users))}")
@@ -218,22 +219,18 @@ X_test_scaled = scaler.transform(X_test)
 lr = LogisticRegression(class_weight='balanced', max_iter=1000, random_state=42)
 lr.fit(X_train_scaled, y_train)
 
-# Train
 y_train_pred = lr.predict(X_train_scaled)
 y_train_proba = lr.predict_proba(X_train_scaled)[:, 1]
 print_metrics("Logistic Regression", y_train, y_train_pred, y_train_proba, "Train")
 
-# Val
 y_val_pred = lr.predict(X_val_scaled)
 y_val_proba = lr.predict_proba(X_val_scaled)[:, 1]
 print_metrics("Logistic Regression", y_val, y_val_pred, y_val_proba, "Val")
 
-# Test
 y_test_pred = lr.predict(X_test_scaled)
 y_test_proba = lr.predict_proba(X_test_scaled)[:, 1]
 p_lr, r_lr, f1_lr, auroc_lr, auprc_lr = print_metrics("Logistic Regression", y_test, y_test_pred, y_test_proba, "Test")
 
-# Для Logistic Regression
 plot_model_evaluation(
     y_test=y_test,
     y_proba=y_test_proba,
@@ -256,19 +253,16 @@ rf = RandomForestClassifier(
 )
 rf.fit(X_train, y_train)
 
-# Train
 y_train_proba = rf.predict_proba(X_train)[:, 1]
 y_train_pred = (y_train_proba >= 0.5).astype(int)
 print_metrics("Random Forest", y_train, y_train_pred, y_train_proba, "Train")
 
-# Val (оптимизация порога)
 y_val_proba = rf.predict_proba(X_val)[:, 1]
 best_thresh_rf = find_best_threshold(y_val, y_val_proba)
 y_val_pred = (y_val_proba >= best_thresh_rf).astype(int)
 print_metrics("Random Forest", y_val, y_val_pred, y_val_proba, "Val")
 print(f"  Оптимальный порог: {best_thresh_rf}")
 
-# Test
 y_test_proba = rf.predict_proba(X_test)[:, 1]
 y_test_pred = (y_test_proba >= best_thresh_rf).astype(int)
 p_rf, r_rf, f1_rf, auroc_rf, auprc_rf = print_metrics("Random Forest", y_test, y_test_pred, y_test_proba, "Test")
@@ -304,34 +298,41 @@ xgb = XGBClassifier(
 
 xgb.fit(X_train, y_train)
 
-# Train
 y_train_proba = xgb.predict_proba(X_train)[:, 1]
 y_train_pred = (y_train_proba >= 0.5).astype(int)
 print_metrics("XGBoost", y_train, y_train_pred, y_train_proba, "Train")
 
-# Val 
 y_val_proba = xgb.predict_proba(X_val)[:, 1]
 
 best_thresh_xgb = find_best_threshold(y_val, y_val_proba)
 print(f"\nОптимальный порог: {best_thresh_xgb} (вычислен автоматически)")
 
-best_thresh_xgb = 0.0
+candidate_thresh = None
 best_f1 = 0
 for thresh in np.linspace(0.1, 0.9, 81):
     pred = (y_val_proba >= thresh).astype(int)
     p, r, f1, _ = precision_recall_fscore_support(y_val, pred, average='binary')
     if r > 0.2 and f1 > best_f1:
         best_f1 = f1
-        best_thresh_xgb = thresh
+        candidate_thresh = thresh
 
-print(f"Оптимальный порог: {best_thresh_xgb} (при ограничении recall > 20%)")
+if candidate_thresh is not None:
+    best_thresh_xgb = candidate_thresh
+    print(f"Оптимальный порог XGBoost: {best_thresh_xgb} (при ограничении recall > 20%)")
+else:
+    print(f"[WARNING] Порог с recall > 20% не найден. "
+          f"Использую порог по умолчанию: {best_thresh_xgb}")
 
-# Test
+# Явная защита от вырожденного порога
+if best_thresh_xgb <= 0.0:
+    print("[WARNING] Порог <= 0 приведёт к пометке всех объектов как аномалий. "
+          "Ставлю 0.5.")
+    best_thresh_xgb = 0.5
+
 y_test_proba = xgb.predict_proba(X_test)[:, 1]
 y_test_pred = (y_test_proba >= best_thresh_xgb).astype(int)
 p_xgb, r_xgb, f1_xgb, auroc_xgb, auprc_xgb = print_metrics("XGBoost", y_test, y_test_pred, y_test_proba, "Test")
 
-# Для XGBoost
 plot_model_evaluation(
     y_test=y_test,
     y_proba=y_test_proba,
@@ -357,11 +358,10 @@ p_iso, r_iso, f1_iso, _ = precision_recall_fscore_support(y_test, y_pred_iso_bin
 auroc_iso = roc_auc_score(y_test, y_proba_iso)
 auprc_iso = average_precision_score(y_test, y_proba_iso)
 
-# Для Logistic Regression
 plot_model_evaluation(
     y_test=y_test,
-    y_proba=y_test_proba,
-    y_pred=y_test_pred,
+    y_proba=y_proba_iso,
+    y_pred=y_pred_iso_binary,
     model_name="Isolation Forest",
     auprc=auprc_iso,
     auroc=auroc_iso

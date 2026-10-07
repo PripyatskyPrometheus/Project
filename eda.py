@@ -4,7 +4,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import missingno as msno
 
-df = pd.read_csv("D:/dataset/features_final.csv")
+# df = pd.read_csv("D:/dataset/features_final.csv")
+df = pd.read_csv("D:/dataset/features_with_ratios.csv")
+
 
 print("ОБЩАЯ ИНФОРМАЦИЯ:")
 print(f"Размер: {df.shape}")
@@ -65,7 +67,7 @@ print(f"Максимум аномальных дней у одного поль�
 print(f"Среднее: {anomaly_by_user.mean()}")
 print(f"Медиана: {anomaly_by_user.median()}")
 
-print("\nGользователи с аномальными днями:")
+print("\nПользователи с аномальными днями:")
 print(anomaly_by_user)
 
 plt.figure(figsize=(10, 5))
@@ -132,7 +134,7 @@ for i, feat in enumerate(top6_features):
     data_to_plot = [df[df['has_anomaly'] == 0][feat].dropna(),
                     df[df['has_anomaly'] == 1][feat].dropna()]
     
-    bp = axes[i].boxplot(data_to_plot, labels=['Норма', 'Аномалия'], patch_artist=True)
+    bp = axes[i].boxplot(data_to_plot, tick_labels=['Норма', 'Аномалия'], patch_artist=True)
     bp['boxes'][0].set_facecolor('lightblue')
     bp['boxes'][1].set_facecolor('salmon')
     axes[i].set_title(feat, fontsize=10)
@@ -193,22 +195,33 @@ print("\nСРАВНЕНИЕ НОРМИРОВАННЫХ И ИСХОДНЫХ ПР�
 ratio_features = ['sensitive_ratio', 'logon_night_ratio', 'http_night_ratio', 
                   'email_night_ratio', 'device_night_ratio', 'external_ratio', 'attachment_ratio']
 
-for ratio_feat in ratio_features:
-    if ratio_feat in df.columns:
-        # Корреляция с таргетом
-        corr_ratio = df[ratio_feat].corr(df['has_anomaly'])
-        
-        # Находим исходный признак (без _ratio)
-        base_feat = ratio_feat.replace('_ratio', '')
-        if base_feat in df.columns:
-            corr_base = df[base_feat].corr(df['has_anomaly'])
-            print(f"\n{ratio_feat}:")
-            print(f"  Нормированная версия корреляция: {corr_ratio}")
-            print(f"  Исходная версия корреляция: {corr_base}")
-            if abs(corr_ratio) > abs(corr_base):
-                print(f"  Перфекто! Нормировка улучшила корреляцию на {abs(corr_ratio - corr_base)}")
-            else:
-                print(f"  АХТУНГ!!! Нормировка не улучшила корреляцию")
+ratio_to_base = {
+    'sensitive_ratio':   'sensitive_files',
+    'external_ratio':    'email_external',
+    'attachment_ratio':  'email_with_attachments',
+    'logon_night_ratio': 'logon_night',
+    'http_night_ratio':  'http_night',
+    'email_night_ratio': 'email_night',
+    'device_night_ratio':'device_night',
+}
+
+for ratio_feat, base_feat in ratio_to_base.items():
+    if ratio_feat not in df.columns:
+        print(f"{ratio_feat} отсутствует в данных")
+        continue
+    if base_feat not in df.columns:
+        print(f"{ratio_feat}: исходная колонка {base_feat} не найдена")
+        continue
+
+    corr_ratio = df[ratio_feat].corr(df['has_anomaly'])
+    corr_base  = df[base_feat].corr(df['has_anomaly'])
+    print(f"\n{ratio_feat} (исходная: {base_feat}):")
+    print(f"  Нормированная корреляция: {corr_ratio}")
+    print(f"  Исходная корреляция:      {corr_base}")
+    if abs(corr_ratio) > abs(corr_base):
+        print(f"  Перфекто! Нормировка улучшила корреляцию на {abs(corr_ratio - corr_base)}")
+    else:
+        print(f"  АХТУНГ!!! Нормировка не улучшила корреляцию")
 
 print("\nВРЕМЕННОЙ АНАЛИЗ АНОМАЛИЙ:")
 
@@ -224,7 +237,6 @@ print("Аномалии по дням недели (% от всех действ
 for i, name in enumerate(weekday_names):
     print(f"  {name}: {anomaly_rate_by_weekday.get(i, 0)}%")
 
-# График
 plt.figure(figsize=(10, 5))
 plt.bar(weekday_names, [anomaly_rate_by_weekday.get(i, 0) for i in range(7)], color='salmon')
 plt.xlabel('День недели')
@@ -262,7 +274,7 @@ print("\nПРОВЕРКА НА ВЫСОКУЮ КОРРЕЛЯЦИЮ МЕЖДУ П
 
 # Выбираем числовые признаки (исключая таргет)
 numeric_for_corr = df.select_dtypes(include=[np.number]).columns.tolist()
-numeric_for_corr = [col for col in numeric_for_corr if col != 'has_anomaly']
+numeric_for_corr = [col for col in numeric_for_corr if col not in ('has_anomaly', 'is_insider', 'scenario')]
 
 corr_matrix_full = df[numeric_for_corr].corr()
 
