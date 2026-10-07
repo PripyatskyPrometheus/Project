@@ -16,7 +16,7 @@ df = df.drop(columns=['session_id'], errors='ignore')
 
 assert df['has_anomaly'].isna().sum() == 0, "has_anomaly содержит NaN!!!"
 df['has_anomaly'] = df['has_anomaly'].astype(int)
-print(f"has_anomaly dtype: {df['has_anomaly'].dtype}, NaN: 0")
+print(f"has_anomaly type: {df['has_anomaly'].dtype}, NaN: 0")
 
 print(f"Всего сессий: {len(df)}")
 print(f"Аномальных: {df['has_anomaly'].sum()} ({df['has_anomaly'].mean()*100:.2f}%)")
@@ -28,8 +28,8 @@ print("\n2. Создание словаря токенов")
 all_tokens = [token for seq in df['sequence'] for token in seq]
 unique_tokens = sorted(set(all_tokens))
 
-print(f"Уникальных токенов: {len(unique_tokens)}")
-print(f"Токены: {unique_tokens}")
+print(f"\nУникальные Токены: {unique_tokens}")
+print(f"Количество: {len(unique_tokens)}")
 
 token_to_id = {token: i for i, token in enumerate(unique_tokens)}
 id_to_token = {i: token for token, i in token_to_id.items()}
@@ -118,9 +118,32 @@ print(f"Длина после padding: {len(sample)}")
 
 print("\n6. Разделение на train/val/test по пользователям")
 
-unique_users = df['user'].unique()
-train_users, test_users = train_test_split(unique_users, test_size=0.3, random_state=42)
-train_users, val_users = train_test_split(train_users, test_size=0.2, random_state=42)
+# Разделяем пользователей на "плохих" (есть аномалии) и "хороших"
+user_anom = df.groupby('user')['has_anomaly'].max()
+bad_users = user_anom[user_anom == 1].index.tolist()
+good_users = user_anom[user_anom == 0].index.tolist()
+
+print(f"Пользователей с аномалиями: {len(bad_users)}")
+print(f"Пользователей без аномалий: {len(good_users)}")
+
+# Стратифицированный split ()
+bad_train, bad_test = train_test_split(bad_users, test_size=0.3, random_state=42)
+bad_train, bad_val = train_test_split(bad_train, test_size=0.2, random_state=42)
+
+good_train, good_test = train_test_split(good_users, test_size=0.3, random_state=42)
+good_train, good_val = train_test_split(good_train, test_size=0.2, random_state=42)
+
+train_users = bad_train + good_train
+val_users = bad_val + good_val
+test_users = bad_test + good_test
+
+print(f"\nTrain: {len(train_users)} пользователей ({len(bad_train)} аномальных)")
+print(f"Val: {len(val_users)} пользователей ({len(bad_val)} плохих)")
+print(f"Test: {len(test_users)} пользователей ({len(bad_test)} плохих)")
+
+# Сохраняем распределение пользователей для анализа
+user_anom.to_pickle("D:/dataset/user_anomaly.pkl")
+print(f"\nРаспределение пользователей сохранено: D:/dataset/user_anomaly.pkl")
 
 train_df = df[df['user'].isin(train_users)]
 val_df = df[df['user'].isin(val_users)]
