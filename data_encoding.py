@@ -118,7 +118,7 @@ print(f"Длина после padding: {len(sample)}")
 
 print("\n6. Разделение на train/val/test по пользователям")
 
-# Разделяем пользователей на "плохих" (есть аномалии) и "хороших"
+# Разделяем пользователей на плохих и хороших
 user_anom = df.groupby('user')['has_anomaly'].max()
 bad_users = user_anom[user_anom == 1].index.tolist()
 good_users = user_anom[user_anom == 0].index.tolist()
@@ -126,7 +126,6 @@ good_users = user_anom[user_anom == 0].index.tolist()
 print(f"Пользователей с аномалиями: {len(bad_users)}")
 print(f"Пользователей без аномалий: {len(good_users)}")
 
-# Стратифицированный split ()
 bad_train, bad_test = train_test_split(bad_users, test_size=0.3, random_state=42)
 bad_train, bad_val = train_test_split(bad_train, test_size=0.2, random_state=42)
 

@@ -26,8 +26,7 @@ class InsiderDataset(Dataset):
 
 
 class InsiderBiLSTM(nn.Module):
-    def __init__(self, vocab_size, token_weights=None, embedding_dim=64,
-                 hidden_dim=120, num_layers=2, dropout=0.4):
+    def __init__(self, vocab_size, token_weights=None, embedding_dim=64, hidden_dim=120, num_layers=2, dropout=0.4):
         super(InsiderBiLSTM, self).__init__()
 
         self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=token_to_id['PAD'])
@@ -162,7 +161,7 @@ print(f"\nTrain: {len(train_df)} сессий ({train_df['has_anomaly'].sum()} �
 print(f"Val: {len(val_df)} сессий ({val_df['has_anomaly'].sum()} аномалий)")
 print(f"Test: {len(test_df)} сессий ({test_df['has_anomaly'].sum()} аномалий)")
 print(f"Размер словаря: {len(token_to_id)}")
-print(f"pos_weight: {pos_weight:.1f} -> sqrt: {pos_weight_sqrt:.1f}")
+print(f"pos_weight: {pos_weight:.1f} -> sqrt(pos_weight): {pos_weight_sqrt:.1f}")
 
 print("\nВТОРОЙ ЭТАП: СОЗДАНИЕ DATASET И DATALOADER")
 
@@ -175,9 +174,9 @@ train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, nu
 val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True)
 test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True)
 
-print(f"\nTrain batches: {len(train_loader)}")
-print(f"Val batches: {len(val_loader)}")
-print(f"Test batches: {len(test_loader)}")
+print(f"\nTrain-батчи: {len(train_loader)}")
+print(f"Val-батчи: {len(val_loader)}")
+print(f"Test-батчи: {len(test_loader)}")
 
 sample_seq, sample_mask, sample_label = next(iter(train_loader))
 print(f"\nПример батча:")
@@ -202,8 +201,8 @@ print(f"Всего памяти GPU: {torch.cuda.get_device_properties(0).total_
 
 total_params = sum(p.numel() for p in model.parameters())
 trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-print(f"\nВсего параметров: {total_params:,}")
-print(f"Обучаемых параметров: {trainable_params:,}")
+print(f"\nВсего параметров: {total_params}")
+print(f"Обучаемых параметров: {trainable_params}")
 
 print("\nАрхитектура модели:")
 print(model)
@@ -323,7 +322,7 @@ print("\nМЕТРИКИ ПО СЕССИЯМ (TEST)")
 print(f"\n{'Порог':>8} | {'Precision':>10} | {'Recall':>10} | {'F1':>10}")
 for th in [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5]:
     p, r, f1, _, _ = calculate_metrics(test_labels, test_probs, threshold=th)
-    marker = " <- best" if abs(th - best_threshold) < 0.02 else ""
+    marker = " <- лучший" if abs(th - best_threshold) < 0.02 else ""
     print(f"{th:>8.2f} | {p:>10.4f} | {r:>10.4f} | {f1:>10.4f}{marker}")
 
 print("\nМЕТРИКИ ПО ПОЛЬЗОВАТЕЛЯМ (TEST)")
