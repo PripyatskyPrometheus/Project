@@ -10,6 +10,23 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from sklearn.metrics import precision_recall_fscore_support, roc_auc_score, average_precision_score, precision_recall_curve, f1_score, precision_score, recall_score
 import time
 import matplotlib.pyplot as plt
+import logging
+import sys
+
+log_file = "D:/dataset/log/bilstm.log"
+
+logger = logging.getLogger('BiLSTM')
+logger.setLevel(logging.INFO)
+
+formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+
+file_handler = logging.FileHandler(log_file, mode='w', encoding='utf-8')
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
+
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
 
 
 class InsiderDataset(Dataset):
@@ -41,7 +58,7 @@ class InsiderBiLSTM(nn.Module):
             hidden_size=hidden_dim,
             num_layers=num_layers,
             bidirectional=True,
-            dropout=dropout if num_layers > 1 else 0,
+            dropout=dropout,
             batch_first=True
         )
 
@@ -56,14 +73,9 @@ class InsiderBiLSTM(nn.Module):
 
         lengths = mask.sum(dim=1).long().clamp(min=1)
 
-        packed = pack_padded_sequence(
-            embedded, lengths.cpu(),
-            batch_first=True, enforce_sorted=False
-        )
+        packed = pack_padded_sequence(embedded, lengths.cpu(), batch_first=True, enforce_sorted=False)
         packed_out, _ = self.bilstm(packed)
-        lstm_out, _ = pad_packed_sequence(
-            packed_out, batch_first=True, total_length=x.size(1)
-        )
+        lstm_out, _ = pad_packed_sequence(packed_out, batch_first=True, total_length=x.size(1))
 
         attn_scores = self.attn(lstm_out)
         attn_scores = attn_scores.masked_fill(mask.unsqueeze(-1) == 0, -1e9)
@@ -136,15 +148,15 @@ def calculate_metrics(labels, probs, threshold=0.5):
     return p, r, f1, auroc, auprc
 
 
-print("ПЕРВЫЙ ЭТАП: ПРОВЕРКА УСТРОЙСТВА И ЗАГРУЗКА ДАННЫХ")
+logger.info("ПЕРВЫЙ ЭТАП: ПРОВЕРКА УСТРОЙСТВА И ЗАГРУЗКА ДАННЫХ")
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(f"Используется устройство: {device}")
+logger.info(f"Используется устройство: {device}")
 if torch.cuda.is_available():
-    print(f"GPU: {torch.cuda.get_device_name(0)}")
+    logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
 
 torch.backends.cudnn.benchmark = True
-print(f"PyTorch: {torch.__version__}")
+logger.info(f"PyTorch: {torch.__version__}")
 
 train_df = pd.read_pickle("D:/dataset/train_sequences.pkl")
 val_df = pd.read_pickle("D:/dataset/val_sequences.pkl")
@@ -157,13 +169,13 @@ token_weights = np.load("D:/dataset/token_weights.npy")
 pos_weight = np.load("D:/dataset/pos_weight.npy")[0]
 pos_weight_sqrt = np.sqrt(pos_weight)
 
-print(f"\nTrain: {len(train_df)} сессий ({train_df['has_anomaly'].sum()} аномалий)")
-print(f"Val: {len(val_df)} сессий ({val_df['has_anomaly'].sum()} аномалий)")
-print(f"Test: {len(test_df)} сессий ({test_df['has_anomaly'].sum()} аномалий)")
-print(f"Размер словаря: {len(token_to_id)}")
-print(f"pos_weight: {pos_weight:.1f} -> sqrt(pos_weight): {pos_weight_sqrt:.1f}")
+logger.info(f"\nTrain: {len(train_df)} сессий ({train_df['has_anomaly'].sum()} аномалий)")
+logger.info(f"Val: {len(val_df)} сессий ({val_df['has_anomaly'].sum()} аномалий)")
+logger.info(f"Test: {len(test_df)} сессий ({test_df['has_anomaly'].sum()} аномалий)")
+logger.info(f"Размер словаря: {len(token_to_id)}")
+logger.info(f"pos_weight: {pos_weight:.1f} -> sqrt(pos_weight): {pos_weight_sqrt:.1f}")
 
-print("\nВТОРОЙ ЭТАП: СОЗДАНИЕ DATASET И DATALOADER")
+logger.info("\nВТОРОЙ ЭТАП: СОЗДАНИЕ DATASET И DATALOADER")
 
 train_dataset = InsiderDataset(train_df)
 val_dataset = InsiderDataset(val_df)
@@ -174,17 +186,17 @@ train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, nu
 val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True)
 test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True)
 
-print(f"\nTrain-батчи: {len(train_loader)}")
-print(f"Val-батчи: {len(val_loader)}")
-print(f"Test-батчи: {len(test_loader)}")
+logger.info(f"\nTrain-батчи: {len(train_loader)}")
+logger.info(f"Val-батчи: {len(val_loader)}")
+logger.info(f"Test-батчи: {len(test_loader)}")
 
 sample_seq, sample_mask, sample_label = next(iter(train_loader))
-print(f"\nПример батча:")
-print(f"Sequence shape: {sample_seq.shape}")
-print(f"Mask shape: {sample_mask.shape}")
-print(f"Label shape: {sample_label.shape}")
+logger.info(f"\nПример батча:")
+logger.info(f"Sequence shape: {sample_seq.shape}")
+logger.info(f"Mask shape: {sample_mask.shape}")
+logger.info(f"Label shape: {sample_label.shape}")
 
-print("\nТРЕТИЙ ЭТАП: СОЗДАНИЕ МОДЕЛИ BiLSTM")
+logger.info("\nТРЕТИЙ ЭТАП: СОЗДАНИЕ МОДЕЛИ BiLSTM")
 
 vocab_size = len(token_to_id)
 model = InsiderBiLSTM(
@@ -196,16 +208,16 @@ model = InsiderBiLSTM(
     dropout=0.4
 ).to(device)
 
-print(f"Модель на устройстве: {next(model.parameters()).device}")
-print(f"Всего памяти GPU: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+logger.info(f"Модель на устройстве: {next(model.parameters()).device}")
+logger.info(f"Всего памяти GPU: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
 
 total_params = sum(p.numel() for p in model.parameters())
 trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-print(f"\nВсего параметров: {total_params}")
-print(f"Обучаемых параметров: {trainable_params}")
+logger.info(f"\nВсего параметров: {total_params}")
+logger.info(f"Обучаемых параметров: {trainable_params}")
 
-print("\nАрхитектура модели:")
-print(model)
+logger.info("\nАрхитектура модели:")
+logger.info(model)
 
 pos_weight_tensor = torch.FloatTensor([pos_weight_sqrt]).to(device)
 criterion_train = nn.BCEWithLogitsLoss(pos_weight=pos_weight_tensor)
@@ -213,10 +225,9 @@ criterion_eval = nn.BCEWithLogitsLoss()
 
 optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
 
-print(f"\nLoss: BCEWithLogitsLoss (pos_weight={pos_weight_sqrt:.1f})")
-print(f"Optimizer: Adam (lr=0.001, weight_decay=1e-5)")
+logger.info(f"\npos_weight={pos_weight_sqrt:.1f}")
 
-print("\nЧЕТВЕРТЫЙ ЭТАП: ОБУЧЕНИЕ")
+logger.info("\nЧЕТВЕРТЫЙ ЭТАП: ОБУЧЕНИЕ")
 N_EPOCHS = 30
 PATIENCE = 5
 
@@ -247,13 +258,13 @@ for epoch in range(N_EPOCHS):
 
     epoch_time = time.time() - epoch_start
 
-    print(f"\nEpoch {epoch+1:2d}/{N_EPOCHS}")
-    print(f"Train Loss: {train_loss:.4f}")
-    print(f"Val Loss: {val_loss:.4f}")
-    print(f"Val F1: {val_f1:.4f}")
-    print(f"Val AUPRC: {val_auprc:.4f}")
-    print(f"Время: {epoch_time:.1f} секунд")
-    print(f"Максимальная загрузка памяти GPU: {torch.cuda.max_memory_allocated() / 1e9:.2f} GB")
+    logger.info(f"\nEpoch {epoch+1:2d}/{N_EPOCHS}")
+    logger.info(f"Train Loss: {train_loss:.4f}")
+    logger.info(f"Val Loss: {val_loss:.4f}")
+    logger.info(f"Val F1: {val_f1:.4f}")
+    logger.info(f"Val AUPRC: {val_auprc:.4f}")
+    logger.info(f"Время: {epoch_time:.1f} секунд")
+    logger.info(f"Максимальная загрузка памяти GPU: {torch.cuda.max_memory_allocated() / 1e9:.2f} GB")
 
     if val_auprc > best_val_auprc:
         best_val_auprc = val_auprc
@@ -262,18 +273,18 @@ for epoch in range(N_EPOCHS):
         state_dict = model.state_dict()
         state_dict = {k.replace('_orig_mod.', ''): v for k, v in state_dict.items()}
         torch.save(state_dict, "D:/dataset/bilstm_best.pt")
-        print(f"Новая лучшая модель (AUPRC={val_auprc:.4f})")
+        logger.info(f"Новая лучшая модель (AUPRC={val_auprc:.4f})")
     else:
         patience_counter += 1
         if patience_counter >= PATIENCE:
-            print(f"\nEarly stopping на эпохе {epoch+1}")
+            logger.info(f"\nEarly stopping на эпохе {epoch+1}")
             break
 
 total_time = time.time() - start_time
-print(f"\nОбщее время обучения: {total_time/60:.1f} минут")
-print(f"Лучшая эпоха: {best_epoch} (Val AUPRC: {best_val_auprc:.4f})")
+logger.info(f"\nОбщее время обучения: {total_time/60:.1f} минут")
+logger.info(f"Лучшая эпоха: {best_epoch} (Val AUPRC: {best_val_auprc:.4f})")
 
-print("\nПЯТЫЙ ЭТАП: ОЦЕНКА")
+logger.info("\nПЯТЫЙ ЭТАП: ОЦЕНКА")
 
 model_eval = InsiderBiLSTM(
     vocab_size=vocab_size,
@@ -290,14 +301,14 @@ model_eval.eval()
 test_loss, test_probs, test_labels = eval_epoch(model_eval, test_loader, criterion_eval, device)
 test_p, test_r, test_f1, test_auroc, test_auprc = calculate_metrics(test_labels, test_probs)
 
-print(f"\nРЕЗУЛЬТАТЫ НА ТЕСТЕ (порог 0.5):")
-print(f"Precision: {test_p:.4f}")
-print(f"Recall: {test_r:.4f}")
-print(f"F1: {test_f1:.4f}")
-print(f"AUROC: {test_auroc:.4f}")
-print(f"AUPRC: {test_auprc:.4f}")
+logger.info(f"\nРЕЗУЛЬТАТЫ НА ТЕСТЕ (порог 0.5):")
+logger.info(f"Precision: {test_p:.4f}")
+logger.info(f"Recall: {test_r:.4f}")
+logger.info(f"F1: {test_f1:.4f}")
+logger.info(f"AUROC: {test_auroc:.4f}")
+logger.info(f"AUPRC: {test_auprc:.4f}")
 
-print("\nПОДБОР ОПТИМАЛЬНОГО ПОРОГА НА VAL")
+logger.info("\nПОДБОР ОПТИМАЛЬНОГО ПОРОГА НА VAL")
 
 val_loss, val_probs, val_labels = eval_epoch(model_eval, val_loader, criterion_eval, device)
 
@@ -306,26 +317,26 @@ f1s = 2 * precisions * recalls / (precisions + recalls + 1e-9)
 best_idx = np.argmax(f1s[:-1])
 best_threshold = thresholds[best_idx]
 
-print(f"\nЛучший порог: {best_threshold:.4f}")
+logger.info(f"\nЛучший порог: {best_threshold:.4f}")
 
 np.save("D:/dataset/best_threshold.npy", np.array([best_threshold]))
-print(f"Порог сохранён: D:/dataset/best_threshold.npy")
+logger.info(f"Порог сохранён: D:/dataset/best_threshold.npy")
 
 p_best, r_best, f1_best, _, _ = calculate_metrics(test_labels, test_probs, threshold=best_threshold)
-print(f"\nПри лучшем пороге {best_threshold:.4f}:")
-print(f"Precision: {p_best:.4f}")
-print(f"Recall: {r_best:.4f}")
-print(f"F1: {f1_best:.4f}")
+logger.info(f"\nПри лучшем пороге {best_threshold:.4f}:")
+logger.info(f"Precision: {p_best:.4f}")
+logger.info(f"Recall: {r_best:.4f}")
+logger.info(f"F1: {f1_best:.4f}")
 
-print("\nМЕТРИКИ ПО СЕССИЯМ (TEST)")
+logger.info("\nМЕТРИКИ ПО СЕССИЯМ (TEST)")
 
-print(f"\n{'Порог':>8} | {'Precision':>10} | {'Recall':>10} | {'F1':>10}")
+logger.info(f"\n{'Порог':>8} {'Precision':>10} {'Recall':>10} {'F1':>10}")
 for th in [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5]:
     p, r, f1, _, _ = calculate_metrics(test_labels, test_probs, threshold=th)
     marker = " <- лучший" if abs(th - best_threshold) < 0.02 else ""
-    print(f"{th:>8.2f} | {p:>10.4f} | {r:>10.4f} | {f1:>10.4f}{marker}")
+    logger.info(f"{th:>8.2f} {p:>10.4f} {r:>10.4f} {f1:>10.4f}{marker}")
 
-print("\nМЕТРИКИ ПО ПОЛЬЗОВАТЕЛЯМ (TEST)")
+logger.info("\nМЕТРИКИ ПО ПОЛЬЗОВАТЕЛЯМ (TEST)")
 
 test_df_copy = test_df.copy()
 test_df_copy['prob'] = test_probs
@@ -333,8 +344,8 @@ test_df_copy['prob'] = test_probs
 user_probs = test_df_copy.groupby('user')['prob'].max()
 user_labels = test_df_copy.groupby('user')['has_anomaly'].max()
 
-print(f"\nВсего пользователей: {len(user_probs)}")
-print(f"Пользователей с аномалиями: {user_labels.sum()}")
+logger.info(f"\nВсего пользователей: {len(user_probs)}")
+logger.info(f"Пользователей с аномалиями: {user_labels.sum()}")
 
 for th in [0.3, 0.5, best_threshold]:
     preds = (user_probs > th).astype(int)
@@ -343,13 +354,13 @@ for th in [0.3, 0.5, best_threshold]:
     f1 = f1_score(user_labels, preds, zero_division=0)
     caught = preds[user_labels == 1].sum()
     total = user_labels.sum()
-    print(f"\nПорог {th:.4f}:")
-    print(f"Precision: {p:.4f}")
-    print(f"Recall: {r:.4f}")
-    print(f"F1: {f1:.4f}")
-    print(f"Поймано: {caught} / {total}")
+    logger.info(f"\nПорог {th:.4f}:")
+    logger.info(f"Precision: {p:.4f}")
+    logger.info(f"Recall: {r:.4f}")
+    logger.info(f"F1: {f1:.4f}")
+    logger.info(f"Поймано: {caught} / {total}")
 
-print("\nАНАЛИЗ ОШИБОК")
+logger.info("\nАНАЛИЗ ОШИБОК")
 
 test_df_copy['pred'] = (test_probs > best_threshold).astype(int)
 
@@ -357,21 +368,21 @@ fn = test_df_copy[(test_df_copy['has_anomaly'] == 1) & (test_df_copy['pred'] == 
 fp = test_df_copy[(test_df_copy['has_anomaly'] == 0) & (test_df_copy['pred'] == 1)]
 tp = test_df_copy[(test_df_copy['has_anomaly'] == 1) & (test_df_copy['pred'] == 1)]
 
-print(f"\nПропущено аномалий: {len(fn)} из {test_df_copy['has_anomaly'].sum()}")
-print(f"Ложных тревог: {len(fp)}")
-print(f"Поймано аномалий: {len(tp)}")
+logger.info(f"\nПропущено аномалий: {len(fn)} из {test_df_copy['has_anomaly'].sum()}")
+logger.info(f"Ложных тревог: {len(fp)}")
+logger.info(f"Поймано аномалий: {len(tp)}")
 
-print(f"\nПримеры ПРОПУЩЕННЫХ аномалий:")
+logger.info(f"\nПримеры ПРОПУЩЕННЫХ аномалий:")
 for _, row in fn.head(5).iterrows():
-    print(f"user={row['user']}, len={row['sequence_length']}, prob={row['prob']:.4f}")
-    print(f"  {row['sequence'][:15]}...")
+    logger.info(f"user={row['user']}, len={row['sequence_length']}, prob={row['prob']:.4f}")
+    logger.info(f"  {row['sequence'][:15]}")
 
-print(f"\nПримеры ПОЙМАННЫХ аномалий (первые 5):")
+logger.info(f"\nПримеры ПОЙМАННЫХ аномалий (первые 5):")
 for _, row in tp.head(5).iterrows():
-    print(f"user={row['user']}, len={row['sequence_length']}, prob={row['prob']:.4f}")
-    print(f"  {row['sequence'][:15]}...")
+    logger.info(f"user={row['user']}, len={row['sequence_length']}, prob={row['prob']:.4f}")
+    logger.info(f"  {row['sequence'][:15]}")
 
-print("\nПОЛЬЗОВАТЕЛИ С АНОМАЛИЯМИ - СТАТУС")
+logger.info("\nПОЛЬЗОВАТЕЛИ С АНОМАЛИЯМИ - СТАТУС")
 
 user_max_prob = test_df_copy.groupby('user')['prob'].max()
 user_anom_count = test_df_copy[test_df_copy['has_anomaly'] == 1].groupby('user').size()
@@ -384,12 +395,12 @@ bad_users_df = pd.DataFrame({
 })
 bad_users_df = bad_users_df[bad_users_df['is_bad'] == 1].sort_values('n_anomalies', ascending=False)
 
-print(f"\n{'user':>12} | {'аномалий':>10} | {'max_prob':>10} | {'пойман?':>8}")
+logger.info(f"\n{'user':>12} {'аномалий':>10} {'max_prob':>10} {'пойман?':>8}")
 for user, row in bad_users_df.iterrows():
     caught = "ДА" if row['max_prob'] > best_threshold else "нет"
-    print(f"{user:>12} | {int(row['n_anomalies']):>10} | {row['max_prob']:>10.4f} | {caught:>8}")
+    logger.info(f"{user:>12} {int(row['n_anomalies']):>10} {row['max_prob']:>10.4f} {caught:>8}")
 
-print("\nШЕСТОЙ ЭТАП: СОХРАНЕНИЕ")
+logger.info("\nШЕСТОЙ ЭТАП: СОХРАНЕНИЕ")
 
 results = {
     'model': 'BiLSTM',
@@ -401,7 +412,7 @@ results = {
     'best_threshold': best_threshold,
 }
 pd.DataFrame([results]).to_csv("D:/dataset/bilstm_results.csv", index=False)
-print(f"Результаты сохранены: D:/dataset/bilstm_results.csv")
+logger.info(f"Результаты сохранены: D:/dataset/bilstm_results.csv")
 
 fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
@@ -433,4 +444,4 @@ axes[2].grid(True)
 plt.tight_layout()
 plt.savefig("D:/dataset/bilstm_training.png", dpi=150)
 plt.close()
-print("Графики сохранены: D:/dataset/bilstm_training.png")
+logger.info("Графики сохранены: D:/dataset/bilstm_training.png")
