@@ -34,7 +34,7 @@ class SimpleHMM:
         self.pi = np.array([0.99, 0.01])
         self.window = window
 
-    def _forward_score(self, probs_sequence):
+    def forward_score(self, probs_sequence):
         probs_sequence = np.clip(probs_sequence, 1e-6, 1 - 1e-6)
         n = len(probs_sequence)
 
@@ -53,8 +53,7 @@ class SimpleHMM:
         for t in range(1, n):
             for j in range(2):
                 emission = (1 - probs_sequence[t]) if j == 0 else probs_sequence[t]
-                alpha[t, j] = (alpha[t-1, 0] * self.A[0, j] +
-                               alpha[t-1, 1] * self.A[1, j]) * emission
+                alpha[t, j] = (alpha[t-1, 0] * self.A[0, j] + alpha[t-1, 1] * self.A[1, j]) * emission
             s = alpha[t].sum()
             if s > 0:
                 alpha[t] /= s
@@ -68,21 +67,21 @@ class SimpleHMM:
         n = len(probs_sequence)
 
         if n == 0:
-            return 0.0
+            return 0
 
         if n <= self.window:
-            return self._forward_score(probs_sequence)
+            return self.forward_score(probs_sequence)
 
         max_score = 0.0
         step = max(1, self.window // 2)
 
         for start in range(0, n - self.window + 1, step):
             window_probs = probs_sequence[start:start + self.window]
-            score = self._forward_score(window_probs)
+            score = self.forward_score(window_probs)
             max_score = max(max_score, score)
 
         last_window = probs_sequence[-self.window:]
-        max_score = max(max_score, self._forward_score(last_window))
+        max_score = max(max_score, self.forward_score(last_window))
 
         return max_score
 
@@ -121,7 +120,6 @@ test_seqs = build_user_sequences(test_df)
 logger.info(f"Val: {len(val_seqs)} пользователей, {sum(1 for s in val_seqs.values() if s['label'] == 1)} аномальных")
 logger.info(f"Test: {len(test_seqs)} пользователей, {sum(1 for s in test_seqs.values() if s['label'] == 1)} аномальных")
 
-
 val_labels = np.array([s['label'] for s in val_seqs.values()])
 test_labels = np.array([s['label'] for s in test_seqs.values()])
 
@@ -134,9 +132,7 @@ test_max_prob = np.array([max(p) for p in test_probs_list])
 logger.info("")
 logger.info("ПЕРЕБОР КОНФИГУРАЦИЙ HMM")
 
-# Список конфигураций
 configs = [
-    # (name, matrix, window)
     ("baseline_0.95_0.05_w20", [[0.95, 0.05], [0.05, 0.95]], 20),
     ("w10", [[0.95, 0.05], [0.05, 0.95]], 10),
     ("w15", [[0.95, 0.05], [0.05, 0.95]], 15),
@@ -153,13 +149,12 @@ results = []
 
 for name, matrix, window in configs:
     logger.info(f"\nКонфигурация: {name}")
-    logger.info(f"  Матрица: {matrix}, окно: {window}")
+    logger.info(f"Матрица: {matrix}, окно: {window}")
 
     hmm = SimpleHMM(trans_matrix=matrix, window=window)
 
     val_hmm = np.array([hmm.sequence_to_user_score(p) for p in val_probs_list])
 
-    # подбор порога
     best_f1_val = 0
     best_thresh = 0.5
     for th in np.arange(0.1, 1.0, 0.01):
@@ -177,8 +172,8 @@ for name, matrix, window in configs:
     f1_test = f1_score(test_labels, preds_test, zero_division=0)
     caught = preds_test[test_labels == 1].sum()
 
-    logger.info(f"  Val F1 = {best_f1_val:.4f}, порог = {best_thresh:.2f}")
-    logger.info(f"  Test: P={p_test:.4f}, R={r_test:.4f}, F1={f1_test:.4f}, Поймано={caught}/{test_labels.sum()}")
+    logger.info(f"Val F1 = {best_f1_val:.4f}, порог = {best_thresh:.2f}")
+    logger.info(f"Test: P={p_test:.4f}, R={r_test:.4f}, F1={f1_test:.4f}, Поймано={caught}/{test_labels.sum()}")
 
     results.append({
         'name': name,
@@ -206,7 +201,7 @@ for _, row in df_results.iterrows():
     logger.info(f"{row['name']:>25} {row['window']:>5} {row['best_thresh']:>5.2f} {row['test_precision']:>7.4f} {row['test_recall']:>7.4f} {row['test_f1']:>7.4f} {row['caught']:>4}/{row['total']:<4}")
 
 logger.info("")
-logger.info("СРАВНЕНИЕ С BiLSTM max prob, 0.83")
+logger.info("СРАВНЕНИЕ С BiLSTM max prob, порог = 0.83")
 
 preds_base = (test_max_prob > 0.83).astype(int)
 p_base = precision_score(test_labels, preds_base, zero_division=0)
@@ -216,16 +211,14 @@ caught_base = preds_base[test_labels == 1].sum()
 
 logger.info(f"\nBaseline: P={p_base:.4f}, R={r_base:.4f}, F1={f1_base:.4f}, Поймано={caught_base}/{test_labels.sum()}")
 
-# лучшая конфигурация
 best_row = df_results.iloc[0]
 logger.info(f"\nЛучшая конфигурация: {best_row['name']}")
-logger.info(f"  P={best_row['test_precision']:.4f}, R={best_row['test_recall']:.4f}, F1={best_row['test_f1']:.4f}, Поймано={best_row['caught']}/{best_row['total']}")
-logger.info(f"  Прирост F1: {best_row['test_f1'] - f1_base:+.4f}")
+logger.info(f"P={best_row['test_precision']:.4f}, R={best_row['test_recall']:.4f}, F1={best_row['test_f1']:.4f}, Поймано={best_row['caught']}/{best_row['total']}")
+logger.info(f"Прирост F1: {best_row['test_f1'] - f1_base:+.4f}")
 
 logger.info("")
 logger.info(f"АНАЛИЗ ЛУЧШЕЙ КОНФИГУРАЦИИ: {best_row['name']}")
 
-# восстановить лучшую конфигурацию
 best_config = None
 for name, matrix, window in configs:
     if name == best_row['name']:
@@ -236,7 +229,6 @@ hmm_best = SimpleHMM(trans_matrix=best_config[0], window=best_config[1])
 test_hmm_best = np.array([hmm_best.sequence_to_user_score(p) for p in test_probs_list])
 preds_best = (test_hmm_best > best_row['best_thresh']).astype(int)
 
-# таблица пользователей
 users_test = list(test_seqs.keys())
 rows = []
 for i, user in enumerate(users_test):
