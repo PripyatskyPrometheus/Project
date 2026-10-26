@@ -226,7 +226,7 @@ def report_user_rule(name, val_probs_series, val_labels_series, test_probs_serie
     logger.info(f"  Топ-5 порогов на val:")
     for t, f in info['top5']:
         logger.info(f"    {t:.2f}: {f:.4f}")
-    logger.info(f"  TEST @ {th:.2f}: F1 users = {t_f1:.4f}, P = {t_p:.4f}, R = {t_r:.4f}, caught = {caught}/{total}")
+    logger.info(f"  TEST {th:.2f}: F1 users = {t_f1:.4f}, P = {t_p:.4f}, R = {t_r:.4f}, caught = {caught}/{total}")
 
     return {
         'rule': name,
