@@ -3,11 +3,15 @@ import pandas as pd
 import numpy as np
 import time
 import os
+import re
 
 data_path = "D:/dataset/labels/"
 output_path = "D:/dataset/"
 
 MAX_LEN = 250
+
+# внутренние домены организации.
+INTERNAL_DOMAINS = {"dtaa.com"}
 
 print("ПЕРВЫЙ ЭТАП: ЗАГРУЗКА РАЗМЕЧЕННЫХ ЛОГОВ")
 
@@ -21,7 +25,7 @@ def download_type(number, type_name, data_path, cols):
 
 logon  = download_type(1, "logon", data_path, ['user','date','pc','activity','is_true_bad'])
 device = download_type(2, "device", data_path, ['user','date','pc','activity','is_true_bad'])
-email  = download_type(3, "email", data_path, ['user','date','to','attachments','is_true_bad'])
+email  = download_type(3, "email", data_path, ['user','date','to','cc','bcc','attachments','is_true_bad'])
 file   = download_type(4, "file", data_path, ['user','date','filename','is_true_bad'])
 http   = download_type(5, "http", data_path, ['user','date','url','is_true_bad'])
 
@@ -82,13 +86,39 @@ file['action'] = np.select(
     default='file_other'
 )
 
-# email
-to = email['to'].astype(str)
-email['action'] = np.where(
-    to.str.contains('dtaa.com', na=False),
-    'email_internal',
-    'email_external'
-)
+# email: разбор всех адресов из to/cc/bcc
+EMAIL_RE = re.compile(r'[a-zA-Z0-9._%+\-]+@([a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})')
+
+def extract_domains(value):
+    """Возвращает множество доменов из строки с адресами, разделёнными ; или ,"""
+    if pd.isna(value):
+        return set()
+    text = str(value)
+    return set(m.group(1).lower() for m in EMAIL_RE.finditer(text))
+
+def classify_email(row):
+    """email_external, если хотя бы один адресат (to+cc+bcc) вне INTERNAL_DOMAINS. Иначе email_internal."""
+    domains = set()
+    for col in ('to', 'cc', 'bcc'):
+        domains |= extract_domains(row.get(col))
+    if not domains:
+        # нет валидных адресов — считаем external, чтобы не терять событие
+        return 'email_external'
+    if domains - INTERNAL_DOMAINS:
+        return 'email_external'
+    return 'email_internal'
+
+email['action'] = email.apply(classify_email, axis=1)
+
+# диагностика по доменам
+_ext = email[email['action'] == 'email_external']
+_int = email[email['action'] == 'email_internal']
+print(f"email_internal: {len(_int)}, email_external: {len(_ext)}")
+_sample_domains = set()
+for col in ('to', 'cc', 'bcc'):
+    for v in email[col].dropna().head(2000):
+        _sample_domains |= extract_domains(v)
+print(f"Примеры доменов (первые 10): {sorted(_sample_domains)[:10]}")
 
 print(f"Время: {time.time()-start} секунд")
 
@@ -127,7 +157,7 @@ all_actions = pd.concat([
 print(f"После email_attach и email_night: {len(all_actions)}")
 print(f"Положительных: {all_actions['is_true_bad'].sum()}")
 
-# logon/logoff как действия
+# logon/logoff как действия (разметка CERT на них не вешается)
 logon_actions = logon[['user', 'day', 'parsed_date']].copy()
 logon_actions['action'] = 'logon'
 logon_actions['is_true_bad'] = 0
@@ -153,7 +183,6 @@ print("\nПЯТЫЙ ЭТАП: ГРУППИРОВКА ПО (USER, DAY)")
 
 start = time.time()
 
-# группировка в последовательности
 seq_df = all_actions.groupby(['user', 'day']).agg(
     sequence=('action', list),
     has_anomaly=('is_true_bad', 'max'),
@@ -172,18 +201,17 @@ truncated_anom = seq_df[seq_df['truncated']]['has_anomaly'].sum()
 print(f"Длиннее {MAX_LEN}: {truncated_count} ({truncated_count/len(seq_df)*100:.2f}%)")
 print(f"Из них аномальных: {truncated_anom}")
 
-# сохраняем полную длину до обрезки
 seq_df['sequence_length'] = seq_df['full_length'].clip(upper=MAX_LEN)
 seq_df['sequence'] = seq_df['sequence'].apply(lambda x: x[:MAX_LEN])
 
-print(f"Средняя длина: {seq_df['sequence_length'].mean():.1f}")
-print(f"Максимальная длина: {seq_df['sequence_length'].max()}")
+print(f"Средняя длина (полная): {seq_df['full_length'].mean():.1f}")
+print(f"Средняя длина (обрезанная): {seq_df['sequence_length'].mean():.1f}")
+print(f"Максимальная длина (полная): {seq_df['full_length'].max()}")
 print(f"Время: {time.time()-start} секунд")
 
 print("\nШЕСТОЙ ЭТАП: СОХРАНЕНИЕ")
 
-# оставляем нужные колонки
-seq_df = seq_df[['user', 'day', 'sequence', 'has_anomaly', 'sequence_length']]
+seq_df = seq_df[['user', 'day', 'sequence', 'has_anomaly', 'sequence_length', 'full_length', 'truncated']]
 
 seq_df.to_csv(output_path + "sequences.csv", index=False)
 print(f"Сохранено в {output_path}sequences.csv")
@@ -191,5 +219,6 @@ print(f"Сохранено в {output_path}sequences.csv")
 print(f"\nИтоговые счётчики:")
 print(f"Всего (user, day): {len(seq_df)}")
 print(f"Аномальных: {seq_df['has_anomaly'].sum()}")
-print(f"Средняя длина: {seq_df['sequence_length'].mean():.1f}")
-print(f"Максимальная длина: {seq_df['sequence_length'].max()}")
+print(f"Средняя длина (полная): {seq_df['full_length'].mean():.1f}")
+print(f"Средняя длина (обрезанная): {seq_df['sequence_length'].mean():.1f}")
+print(f"Максимальная длина (полная): {seq_df['full_length'].max()}")

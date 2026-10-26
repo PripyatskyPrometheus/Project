@@ -8,6 +8,7 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from sklearn.metrics import precision_recall_fscore_support, roc_auc_score, average_precision_score, precision_recall_curve, f1_score, precision_score, recall_score
+from sklearn.isotonic import IsotonicRegression
 import time
 import matplotlib.pyplot as plt
 import logging
@@ -29,24 +30,30 @@ console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
+# Дополнительные признаки дня (кроме последовательности токенов) для корреляции
+EXTRA_COLS = ['full_length_norm', 'prev_label', 'days_since_anom_norm']
+N_EXTRA = len(EXTRA_COLS)
+
 
 class InsiderDataset(Dataset):
     def __init__(self, df):
         self.sequences = torch.LongTensor(np.vstack(df['padded'].values))
         self.masks = torch.FloatTensor(np.stack(df['mask'].values))
         self.labels = torch.FloatTensor(df['has_anomaly'].values)
+        self.extra = torch.FloatTensor(df[EXTRA_COLS].values.astype(np.float32))
 
     def __len__(self):
         return len(self.labels)
 
     def __getitem__(self, idx):
-        return self.sequences[idx], self.masks[idx], self.labels[idx]
+        return self.sequences[idx], self.masks[idx], self.extra[idx], self.labels[idx]
 
 
 class InsiderBiLSTM(nn.Module):
-    def __init__(self, vocab_size, token_weights=None, embedding_dim=64, hidden_dim=120, num_layers=2, dropout=0.4):
+    def __init__(self, vocab_size, token_to_id, token_weights=None, embedding_dim=64, hidden_dim=256, num_layers=2, dropout=0.4, max_len=250, n_extra=3):
         super(InsiderBiLSTM, self).__init__()
 
+        self.max_len = max_len
         self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=token_to_id['PAD'])
 
         if token_weights is not None:
@@ -65,9 +72,10 @@ class InsiderBiLSTM(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
         self.attn = nn.Linear(hidden_dim * 2, 1)
-        self.fc = nn.Linear(hidden_dim * 2 + 1, 1)
+        # вход классификатора: attention-вектор + нормированная длина + доп. признаки
+        self.fc = nn.Linear(hidden_dim * 2 + 1 + n_extra, 1)
 
-    def forward(self, x, mask):
+    def forward(self, x, mask, extra):
         embedded = self.embedding(x)
         weights = self.token_weights[x].unsqueeze(-1)
         embedded = embedded * weights
@@ -78,13 +86,14 @@ class InsiderBiLSTM(nn.Module):
         packed_out, _ = self.bilstm(packed)
         lstm_out, _ = pad_packed_sequence(packed_out, batch_first=True, total_length=x.size(1))
 
+        # attention по реальным токенам (PAD замаскирован)
         attn_scores = self.attn(lstm_out)
         attn_scores = attn_scores.masked_fill(mask.unsqueeze(-1) == 0, -1e9)
         attn_weights = torch.softmax(attn_scores, dim=1)
         attn_out = (lstm_out * attn_weights).sum(dim=1)
 
-        lengths_norm = lengths.float().unsqueeze(-1) / 250.0
-        combined = torch.cat([attn_out, lengths_norm], dim=1)
+        lengths_norm = lengths.float().unsqueeze(-1) / float(self.max_len)
+        combined = torch.cat([attn_out, lengths_norm, extra], dim=1)
 
         combined = self.dropout(combined)
         out = self.fc(combined)
@@ -96,13 +105,14 @@ def train_epoch(model, loader, criterion, optimizer, device):
     total_loss = 0
     n_batches = 0
 
-    for sequences, masks, labels in loader:
+    for sequences, masks, extra, labels in loader:
         sequences = sequences.to(device, non_blocking=True)
         masks = masks.to(device, non_blocking=True)
+        extra = extra.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True)
 
         optimizer.zero_grad()
-        outputs = model(sequences, masks)
+        outputs = model(sequences, masks, extra)
         loss = criterion(outputs, labels)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -122,12 +132,13 @@ def eval_epoch(model, loader, criterion, device):
     all_labels = []
 
     with torch.no_grad():
-        for sequences, masks, labels in loader:
+        for sequences, masks, extra, labels in loader:
             sequences = sequences.to(device)
             masks = masks.to(device)
+            extra = extra.to(device)
             labels = labels.to(device)
 
-            outputs = model(sequences, masks)
+            outputs = model(sequences, masks, extra)
             loss = criterion(outputs, labels)
 
             probs = torch.sigmoid(outputs)
@@ -147,6 +158,89 @@ def calculate_metrics(labels, probs, threshold=0.5):
     auroc = roc_auc_score(labels, probs)
     auprc = average_precision_score(labels, probs)
     return p, r, f1, auroc, auprc
+
+
+def add_rolling(df, window=3):
+    """Скользящее среднее вероятности по дням внутри пользователя (дни по возрастанию)."""
+    df = df.sort_values(['user', 'day']).copy()
+    df[f'roll{window}_mean'] = (
+        df.groupby('user')['prob']
+          .transform(lambda s: s.rolling(window, min_periods=1).mean())
+    )
+    return df
+
+
+def user_level_probs(df, prob_col):
+    g = df.groupby('user')
+    return g[prob_col].max(), g['has_anomaly'].max()
+
+
+def select_user_threshold(val_probs_series, val_labels_series,
+                          grid=np.arange(0.05, 0.96, 0.01), plateau_delta=0.02):
+    """Подбор порога по F1 пользователей на val. Находит лучший порог, топ-5 и диапазон порогов,
+        где F1 в пределах plateau_delta от лучшего выбора.
+    """
+    scores = []
+    for th in grid:
+        preds = (val_probs_series >= th).astype(int)
+        f1 = f1_score(val_labels_series, preds, zero_division=0)
+        scores.append((float(th), float(f1)))
+
+    scores.sort(key=lambda x: (-x[1], x[0]))
+    best_th, best_f1 = scores[0]
+    top5 = scores[:5]
+
+    plateau = sorted([th for th, f1 in scores if f1 >= best_f1 - plateau_delta])
+
+    return {
+        'best_threshold': best_th,
+        'best_f1': best_f1,
+        'top5': top5,
+        'plateau': (plateau[0], plateau[-1]) if plateau else (best_th, best_th),
+        'plateau_width': len(plateau),
+    }
+
+
+def select_day_threshold(val_labels, val_probs):
+    precisions, recalls, thresholds = precision_recall_curve(val_labels, val_probs)
+    f1s = 2 * precisions * recalls / (precisions + recalls + 1e-9)
+    best_idx = np.argmax(f1s[:-1])
+    return float(thresholds[best_idx])
+
+
+def report_user_rule(name, val_probs_series, val_labels_series, test_probs_series, test_labels_series, logger):
+    """Подбор порога на val, отчёт топ-5/плато и метрик на test."""
+    info = select_user_threshold(val_probs_series, val_labels_series)
+    th = info['best_threshold']
+
+    preds = (test_probs_series >= th).astype(int)
+    t_p = precision_score(test_labels_series, preds, zero_division=0)
+    t_r = recall_score(test_labels_series, preds, zero_division=0)
+    t_f1 = f1_score(test_labels_series, preds, zero_division=0)
+    caught = int(preds[test_labels_series == 1].sum())
+    total = int(test_labels_series.sum())
+
+    logger.info(f"\n[{name}]")
+    logger.info(f"  Лучший порог (val): {th:.2f} (val F1 users = {info['best_f1']:.4f})")
+    logger.info(f"  Диапозон: {info['plateau'][0]:.2f}–{info['plateau'][1]:.2f} (ширина {info['plateau_width']})")
+    logger.info(f"  Топ-5 порогов на val:")
+    for t, f in info['top5']:
+        logger.info(f"    {t:.2f}: {f:.4f}")
+    logger.info(f"  TEST @ {th:.2f}: F1 users = {t_f1:.4f}, P = {t_p:.4f}, R = {t_r:.4f}, caught = {caught}/{total}")
+
+    return {
+        'rule': name,
+        'best_threshold': float(th),
+        'val_f1_users': float(info['best_f1']),
+        'plateau_lo': float(info['plateau'][0]),
+        'plateau_hi': float(info['plateau'][1]),
+        'plateau_width': int(info['plateau_width']),
+        'test_f1_users': float(t_f1),
+        'test_precision': float(t_p),
+        'test_recall': float(t_r),
+        'caught': f"{caught}/{total}",
+        'top5': info['top5'],
+    }
 
 
 logger.info("ПЕРВЫЙ ЭТАП: ПРОВЕРКА УСТРОЙСТВА И ЗАГРУЗКА ДАННЫХ")
@@ -170,15 +264,14 @@ token_weights = np.load("D:/dataset/token_weights.npy")
 pos_weight = np.load("D:/dataset/pos_weight.npy")[0]
 pos_weight_sqrt = np.sqrt(pos_weight)
 
-train_users = train_df['user'].unique().tolist()
-val_users = val_df['user'].unique().tolist()
-test_users = test_df['user'].unique().tolist()
-
 logger.info(f"\nTrain: {len(train_df)} (user, day) ({train_df['has_anomaly'].sum()} аномалий)")
 logger.info(f"Val: {len(val_df)} (user, day) ({val_df['has_anomaly'].sum()} аномалий)")
 logger.info(f"Test: {len(test_df)} (user, day) ({test_df['has_anomaly'].sum()} аномалий)")
 logger.info(f"Размер словаря: {len(token_to_id)}")
-logger.info(f"pos_weight: {pos_weight:.1f} -> sqrt: {pos_weight_sqrt:.1f}")
+logger.info(f"pos_weight: {pos_weight:.1f} -> sqrt(pos_weight): {pos_weight_sqrt:.1f}")
+logger.info(f"Доп. признаки ({N_EXTRA}): {EXTRA_COLS}")
+for c in EXTRA_COLS:
+    logger.info(f"  {c}: mean={train_df[c].mean():.3f}, std={train_df[c].std():.3f}")
 
 logger.info("\nВТОРОЙ ЭТАП: СОЗДАНИЕ DATASET И DATALOADER")
 
@@ -195,22 +288,29 @@ logger.info(f"\nTrain-батчи: {len(train_loader)}")
 logger.info(f"Val-батчи: {len(val_loader)}")
 logger.info(f"Test-батчи: {len(test_loader)}")
 
-sample_seq, sample_mask, sample_label = next(iter(train_loader))
+sample_seq, sample_mask, sample_extra, sample_label = next(iter(train_loader))
 logger.info(f"\nПример батча:")
 logger.info(f"Sequence shape: {sample_seq.shape}")
 logger.info(f"Mask shape: {sample_mask.shape}")
+logger.info(f"Extra shape: {sample_extra.shape}")
 logger.info(f"Label shape: {sample_label.shape}")
 
 logger.info("\nТРЕТИЙ ЭТАП: СОЗДАНИЕ МОДЕЛИ BiLSTM")
 
 vocab_size = len(token_to_id)
+MAX_LEN = 250
+HIDDEN_DIM = 128
+
 model = InsiderBiLSTM(
     vocab_size=vocab_size,
+    token_to_id=token_to_id,
     token_weights=token_weights,
     embedding_dim=64,
-    hidden_dim=120,
+    hidden_dim=HIDDEN_DIM,
     num_layers=2,
-    dropout=0.4
+    dropout=0.4,
+    max_len=MAX_LEN,
+    n_extra=N_EXTRA,
 ).to(device)
 
 logger.info(f"Модель на устройстве: {next(model.parameters()).device}")
@@ -220,6 +320,7 @@ total_params = sum(p.numel() for p in model.parameters())
 trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 logger.info(f"\nВсего параметров: {total_params}")
 logger.info(f"Обучаемых параметров: {trainable_params}")
+logger.info(f"hidden_dim={HIDDEN_DIM}, n_extra={N_EXTRA}")
 
 logger.info("\nАрхитектура модели:")
 logger.info(model)
@@ -274,9 +375,7 @@ for epoch in range(N_EPOCHS):
         best_val_auprc = val_auprc
         best_epoch = epoch + 1
         patience_counter = 0
-        state_dict = model.state_dict()
-        state_dict = {k.replace('_orig_mod.', ''): v for k, v in state_dict.items()}
-        torch.save(state_dict, "D:/dataset/bilstm_best.pt")
+        torch.save(model.state_dict(), "D:/dataset/bilstm_best.pt")
         logger.info(f"Новая лучшая модель (AUPRC={val_auprc:.4f})")
     else:
         patience_counter += 1
@@ -292,147 +391,137 @@ logger.info("\nПЯТЫЙ ЭТАП: ОЦЕНКА")
 
 model_eval = InsiderBiLSTM(
     vocab_size=vocab_size,
+    token_to_id=token_to_id,
     token_weights=token_weights,
     embedding_dim=64,
-    hidden_dim=120,
+    hidden_dim=HIDDEN_DIM,
     num_layers=2,
-    dropout=0.4
+    dropout=0.4,
+    max_len=MAX_LEN,
+    n_extra=N_EXTRA,
 ).to(device)
 
 model_eval.load_state_dict(torch.load("D:/dataset/bilstm_best.pt"))
 model_eval.eval()
 
-train_loss, train_probs, train_labels = eval_epoch(model_eval, train_loader, criterion, device)
-val_loss, val_probs, val_labels = eval_epoch(model_eval, val_loader, criterion, device)
 test_loss, test_probs, test_labels = eval_epoch(model_eval, test_loader, criterion, device)
-
 test_p, test_r, test_f1, test_auroc, test_auprc = calculate_metrics(test_labels, test_probs)
 
-logger.info(f"\nРЕЗУЛЬТАТЫ НА ТЕСТЕ (порог 0.5):")
+logger.info(f"\nРЕЗУЛЬТАТЫ НА ТЕСТЕ (порог 0.5, дни):")
 logger.info(f"Precision: {test_p:.4f}")
 logger.info(f"Recall: {test_r:.4f}")
 logger.info(f"F1: {test_f1:.4f}")
 logger.info(f"AUROC: {test_auroc:.4f}")
 logger.info(f"AUPRC: {test_auprc:.4f}")
 
-logger.info("\nПОДБОР ОПТИМАЛЬНОГО ПОРОГА НА VAL (ПО ПОЛЬЗОВАТЕЛЯМ)")
+logger.info("\nПОДБОР ПОРОГА НА VAL (user-level, тонко, шаг 0.01)")
 
-val_df_copy = val_df.copy()
-val_df_copy['prob'] = val_probs
+val_loss, val_probs, val_labels = eval_epoch(model_eval, val_loader, criterion, device)
 
-val_user_probs = val_df_copy.groupby('user')['prob'].max()
-val_user_labels = val_df_copy.groupby('user')['has_anomaly'].max()
+val_df_eval = val_df.copy()
+val_df_eval['prob'] = val_probs
+test_df_eval = test_df.copy()
+test_df_eval['prob'] = test_probs
 
-best_f1_users = 0
-best_threshold_users = 0.5
+# 1) max(prob)
+val_user_probs, val_user_labels = user_level_probs(val_df_eval, 'prob')
+test_user_probs, test_user_labels = user_level_probs(test_df_eval, 'prob')
+rule_max = report_user_rule("max(prob)", val_user_probs, val_user_labels, test_user_probs, test_user_labels, logger)
 
-for th in np.arange(0.1, 1.0, 0.01):
-    preds = (val_user_probs >= th).astype(int)
-    f1 = f1_score(val_user_labels, preds, zero_division=0)
-    if f1 > best_f1_users:
-        best_f1_users = f1
-        best_threshold_users = th
+# 2) hybrid: пик + среднее за 3 дня (два α: оптимум F1 и recall-режим)
+val_df_eval = add_rolling(val_df_eval, window=3)
+test_df_eval = add_rolling(test_df_eval, window=3)
 
-day_threshold = best_threshold
-best_threshold = best_threshold_users
+rule_hybrid_04 = None
+rule_hybrid_05 = None
+for alpha, tag in [(0.4, 'α=0.4'), (0.5, 'α=0.5')]:
+    v = val_df_eval.copy()
+    t = test_df_eval.copy()
+    v['hybrid'] = v['prob'] + alpha * v['roll3_mean']
+    t['hybrid'] = t['prob'] + alpha * t['roll3_mean']
+    vp, vl = user_level_probs(v, 'hybrid')
+    tp, tl = user_level_probs(t, 'hybrid')
+    r = report_user_rule(f"hybrid {tag} (max + {alpha}*roll3_mean)", vp, vl, tp, tl, logger)
+    if alpha == 0.4:
+        rule_hybrid_04 = r
+    else:
+        rule_hybrid_05 = r
 
-logger.info(f"Day-level порог (val F1 дней): {day_threshold:.4f}")
-logger.info(f"User-level порог (val F1 пользователей): {best_threshold:.4f} (F1={best_f1_users:.4f})")
+# isotonic-калибровка (precision-режим)
+iso = IsotonicRegression(out_of_bounds='clip')
+iso.fit(val_df_eval['prob'].values, val_df_eval['has_anomaly'].values)
+val_df_eval['prob_iso'] = iso.predict(val_df_eval['prob'].values)
+test_df_eval['prob_iso'] = iso.predict(test_df_eval['prob'].values)
+vp, vl = user_level_probs(val_df_eval, 'prob_iso')
+tp, tl = user_level_probs(test_df_eval, 'prob_iso')
+rule_iso = report_user_rule("isotonic(prob)", vp, vl, tp, tl, logger)
 
-np.save("D:/dataset/best_threshold.npy", np.array([best_threshold])
+day_threshold = select_day_threshold(val_labels, val_probs)
+logger.info(f"\nDay-level порог (для справки): {day_threshold:.4f}")
 
-p_best, r_best, f1_best, _, _ = calculate_metrics(test_labels, test_probs, threshold=best_threshold)
-logger.info(f"\nПри лучшем пороге {best_threshold:.4f}:")
-logger.info(f"Precision: {p_best:.4f}")
-logger.info(f"Recall: {r_best:.4f}")
-logger.info(f"F1: {f1_best:.4f}")
+best_threshold = rule_hybrid_04['best_threshold']
+np.save("D:/dataset/best_threshold.npy", np.array([best_threshold]))
+logger.info(f"best_threshold.npy (hybrid α=0.4): {best_threshold:.4f}")
 
-_, _, f1_base_083, _, _ = calculate_metrics(test_labels, test_probs, threshold=0.83)
+logger.info("\nАНАЛИЗ ОШИБОК (hybrid α=0.4)")
 
-logger.info("\nМЕТРИКИ ПО ДНЯМ (TEST)")
+test_df_eval['hybrid_04'] = test_df_eval['prob'] + 0.4 * test_df_eval['roll3_mean']
+test_df_eval['pred'] = (test_df_eval['hybrid_04'] > best_threshold).astype(int)
 
-logger.info(f"\n{'Порог':>8} {'Precision':>10} {'Recall':>10} {'F1':>10}")
-for th in [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5]:
-    p, r, f1, _, _ = calculate_metrics(test_labels, test_probs, threshold=th)
-    marker = " <- лучший" if abs(th - best_threshold) < 0.02 else ""
-    logger.info(f"{th:>8.2f} {p:>10.4f} {r:>10.4f} {f1:>10.4f}{marker}")
+fn = test_df_eval[(test_df_eval['has_anomaly'] == 1) & (test_df_eval['pred'] == 0)]
+fp = test_df_eval[(test_df_eval['has_anomaly'] == 0) & (test_df_eval['pred'] == 1)]
+tp_ = test_df_eval[(test_df_eval['has_anomaly'] == 1) & (test_df_eval['pred'] == 1)]
 
-logger.info("\nМЕТРИКИ ПО ПОЛЬЗОВАТЕЛЯМ (TEST)")
-
-test_df_copy = test_df.copy()
-test_df_copy['prob'] = test_probs
-
-user_probs = test_df_copy.groupby('user')['prob'].max()
-user_labels = test_df_copy.groupby('user')['has_anomaly'].max()
-
-logger.info(f"\nВсего пользователей: {len(user_probs)}")
-logger.info(f"Пользователей с аномалиями: {user_labels.sum()}")
-
-for th in [0.3, 0.5, best_threshold]:
-    preds = (user_probs >= th).astype(int)
-    p = precision_score(user_labels, preds, zero_division=0)
-    r = recall_score(user_labels, preds, zero_division=0)
-    f1 = f1_score(user_labels, preds, zero_division=0)
-    caught = preds[user_labels == 1].sum()
-    total = user_labels.sum()
-    logger.info(f"\nПорог {th:.4f}:")
-    logger.info(f"Precision: {p:.4f}")
-    logger.info(f"Recall: {r:.4f}")
-    logger.info(f"F1: {f1:.4f}")
-    logger.info(f"Поймано: {caught} / {total}")
-
-logger.info("\nАНАЛИЗ ОШИБОК")
-
-test_df_copy['pred'] = (test_probs >= best_threshold).astype(int)
-
-fn = test_df_copy[(test_df_copy['has_anomaly'] == 1) & (test_df_copy['pred'] == 0)]
-fp = test_df_copy[(test_df_copy['has_anomaly'] == 0) & (test_df_copy['pred'] == 1)]
-tp = test_df_copy[(test_df_copy['has_anomaly'] == 1) & (test_df_copy['pred'] == 1)]
-
-logger.info(f"\nПропущено аномалий: {len(fn)} из {test_df_copy['has_anomaly'].sum()}")
+logger.info(f"\nПропущено аномалий: {len(fn)} из {test_df_eval['has_anomaly'].sum()}")
 logger.info(f"Ложных тревог: {len(fp)}")
-logger.info(f"Поймано аномалий: {len(tp)}")
+logger.info(f"Поймано аномалий: {len(tp_)}")
 
 logger.info(f"\nПримеры ПРОПУЩЕННЫХ аномалий:")
 for _, row in fn.head(5).iterrows():
-    logger.info(f"user={row['user']}, day={row['day']}, len={row['sequence_length']}, prob={row['prob']:.4f}")
+    logger.info(f"user={row['user']}, day={row['day']}, len={row['sequence_length']}, prob={row['prob']:.4f}, hybrid={row['hybrid_04']:.4f}")
 
 logger.info(f"\nПримеры ПОЙМАННЫХ аномалий (первые 5):")
-for _, row in tp.head(5).iterrows():
-    logger.info(f"user={row['user']}, day={row['day']}, len={row['sequence_length']}, prob={row['prob']:.4f}")
+for _, row in tp_.head(5).iterrows():
+    logger.info(f"user={row['user']}, day={row['day']}, len={row['sequence_length']}, prob={row['prob']:.4f}, hybrid={row['hybrid_04']:.4f}")
 
-logger.info("\nПОЛЬЗОВАТЕЛИ С АНОМАЛИЯМИ - СТАТУС")
+logger.info("\nПОЛЬЗОВАТЕЛИ С АНОМАЛИЯМИ - СТАТУС (hybrid α=0.4, порог из val)")
 
-user_max_prob = test_df_copy.groupby('user')['prob'].max()
-user_anom_count = test_df_copy[test_df_copy['has_anomaly'] == 1].groupby('user').size()
-user_has_anom = test_df_copy.groupby('user')['has_anomaly'].max()
+user_hybrid_max = test_df_eval.groupby('user')['hybrid_04'].max()
+user_anom_count = test_df_eval[test_df_eval['has_anomaly'] == 1].groupby('user').size()
+user_has_anom = test_df_eval.groupby('user')['has_anomaly'].max()
 
 bad_users_df = pd.DataFrame({
-    'max_prob': user_max_prob,
+    'hybrid_max': user_hybrid_max,
     'n_anomalies': user_anom_count,
     'is_bad': user_has_anom
 })
 bad_users_df = bad_users_df[bad_users_df['is_bad'] == 1].sort_values('n_anomalies', ascending=False)
 
-logger.info(f"\n{'user':>12} {'аномалий':>10} {'max_prob':>10} {'пойман?':>8}")
+logger.info(f"\n{'user':>12} {'аномалий':>10} {'hybrid_max':>12} {'пойман?':>8}")
 for user, row in bad_users_df.iterrows():
-    caught = "ДА" if row['max_prob'] >= best_threshold else "нет"
-    logger.info(f"{user:>12} {int(row['n_anomalies']):>10} {row['max_prob']:>10.4f} {caught:>8}")
+    caught = "ДА" if row['hybrid_max'] >= best_threshold else "нет"
+    logger.info(f"{user:>12} {int(row['n_anomalies']):>10} {row['hybrid_max']:>12.4f} {caught:>8}")
 
 logger.info("\nШЕСТОЙ ЭТАП: СОХРАНЕНИЕ")
 
 results = {
-    'model': 'BiLSTM',
-    'best_threshold': best_threshold,
-    'precision_days': p_best,
-    'recall_days': r_best,
-    'f1_days': f1_best,
+    'model': 'BiLSTM+extra',
+    'hidden_dim': HIDDEN_DIM,
+    'n_extra': N_EXTRA,
     'auroc': test_auroc,
     'auprc': test_auprc,
-    'precision_at_05': test_p,
-    'recall_at_05': test_r,
-    'f1_at_05': test_f1,
+    'precision_at_05_days': test_p,
+    'recall_at_05_days': test_r,
+    'f1_at_05_days': test_f1,
+    'day_threshold_for_reference': day_threshold,
 }
+for r in [rule_max, rule_hybrid_04, rule_hybrid_05, rule_iso]:
+    key = (r['rule'].replace(' ', '_').replace('(', '').replace(')', '').replace('*', 'x').replace('+', 'plus').replace('.', '_')
+        .replace('α', 'a').replace('=', ''))
+    results[f'{key}_threshold'] = r['best_threshold']
+    results[f'{key}_val_f1'] = r['val_f1_users']
+    results[f'{key}_test_f1'] = r['test_f1_users']
+    results[f'{key}_caught'] = r['caught']
 pd.DataFrame([results]).to_csv("D:/dataset/bilstm_results.csv", index=False)
 logger.info(f"Результаты сохранены: D:/dataset/bilstm_results.csv")
 
@@ -473,9 +562,9 @@ logger.info('Сохраняем версию прогона')
 run_dir = make_run_dir("bilstm")
 
 config = {
-    "model": "BiLSTM",
+    "model": "BiLSTM+extra",
     "embedding_dim": 64,
-    "hidden_dim": 120,
+    "hidden_dim": HIDDEN_DIM,
     "num_layers": 2,
     "dropout": 0.4,
     "batch_size": 128,
@@ -483,9 +572,15 @@ config = {
     "weight_decay": 1e-5,
     "pos_weight": float(pos_weight),
     "pos_weight_sqrt": float(np.sqrt(pos_weight)),
-    "max_len": 250,
-    "n_epochs": 30,
-    "patience": 5,
+    "max_len": MAX_LEN,
+    "n_epochs": N_EPOCHS,
+    "patience": PATIENCE,
+    "threshold_selection": "val_f1_users_thin_0.01",
+    "plateau_delta": 0.02,
+    "hybrid_alpha_main": 0.4,
+    "hybrid_alpha_recall": 0.5,
+    "hybrid_window": 3,
+    "extra_cols": EXTRA_COLS,
     "random_seed": 42,
 }
 save_config(run_dir, config)
@@ -504,19 +599,16 @@ code_files = {
 }
 save_versions(run_dir, data_files, code_files)
 
+train_users = train_df['user'].unique()
+val_users = val_df['user'].unique()
+test_users = test_df['user'].unique()
 save_split(run_dir, train_users, val_users, test_users)
 
-train_pred = train_df.copy()
-train_pred['prob'] = train_probs
-save_predictions(run_dir, "train_probs", train_pred[['user', 'prob', 'has_anomaly']])
+val_pred = val_df_eval[['user', 'day', 'prob', 'has_anomaly']].copy()
+save_predictions(run_dir, "val_probs", val_pred)
 
-val_pred = val_df.copy()
-val_pred['prob'] = val_probs
-save_predictions(run_dir, "val_probs", val_pred[['user', 'prob', 'has_anomaly']])
-
-test_pred = test_df.copy()
-test_pred['prob'] = test_probs
-save_predictions(run_dir, "test_probs", test_pred[['user', 'prob', 'has_anomaly']])
+test_pred = test_df_eval[['user', 'day', 'prob', 'has_anomaly']].copy()
+save_predictions(run_dir, "test_probs", test_pred)
 
 metrics = {
     "days": {
@@ -526,10 +618,33 @@ metrics = {
         "auroc": float(test_auroc),
         "auprc": float(test_auprc),
     },
-    "users": {
-        "f1_at_083": float(f1_base_083),
-        "f1_at_best_threshold": float(f1_best),
-        "best_threshold": float(best_threshold),
+    "users_max": {
+        "best_threshold": float(rule_max['best_threshold']),
+        "val_f1_users": float(rule_max['val_f1_users']),
+        "test_f1_users": float(rule_max['test_f1_users']),
+        "caught": rule_max['caught'],
+        "plateau": f"{rule_max['plateau_lo']:.2f}-{rule_max['plateau_hi']:.2f}",
+    },
+    "users_hybrid_04": {
+        "best_threshold": float(rule_hybrid_04['best_threshold']),
+        "val_f1_users": float(rule_hybrid_04['val_f1_users']),
+        "test_f1_users": float(rule_hybrid_04['test_f1_users']),
+        "caught": rule_hybrid_04['caught'],
+        "plateau": f"{rule_hybrid_04['plateau_lo']:.2f}-{rule_hybrid_04['plateau_hi']:.2f}",
+    },
+    "users_hybrid_05": {
+        "best_threshold": float(rule_hybrid_05['best_threshold']),
+        "val_f1_users": float(rule_hybrid_05['val_f1_users']),
+        "test_f1_users": float(rule_hybrid_05['test_f1_users']),
+        "caught": rule_hybrid_05['caught'],
+        "plateau": f"{rule_hybrid_05['plateau_lo']:.2f}-{rule_hybrid_05['plateau_hi']:.2f}",
+    },
+    "users_isotonic": {
+        "best_threshold": float(rule_iso['best_threshold']),
+        "val_f1_users": float(rule_iso['val_f1_users']),
+        "test_f1_users": float(rule_iso['test_f1_users']),
+        "caught": rule_iso['caught'],
+        "plateau": f"{rule_iso['plateau_lo']:.2f}-{rule_iso['plateau_hi']:.2f}",
     },
     "best_epoch": best_epoch,
     "best_val_auprc": float(best_val_auprc),
@@ -538,15 +653,45 @@ metrics = {
 save_metrics(run_dir, metrics)
 
 threshold_info = {
-    "best_threshold": float(best_threshold),
-    "day_level_threshold": float(day_threshold),
-    "selection_metric": "val_f1_users",
-    "val_f1_users": float(best_f1_users),
-    "f1_at_05": float(test_f1),
-    "f1_at_best": float(f1_best),
+    "selection_metric": "val_f1_users_thin_0.01",
+    "day_threshold_for_reference": float(day_threshold),
+    "rules": {
+        "max": {
+            "best_threshold": float(rule_max['best_threshold']),
+            "val_f1_users": float(rule_max['val_f1_users']),
+            "test_f1_users": float(rule_max['test_f1_users']),
+            "plateau": f"{rule_max['plateau_lo']:.2f}-{rule_max['plateau_hi']:.2f}",
+            "top5_val": rule_max['top5'],
+        },
+        "hybrid_04": {
+            "alpha": 0.4,
+            "window": 3,
+            "best_threshold": float(rule_hybrid_04['best_threshold']),
+            "val_f1_users": float(rule_hybrid_04['val_f1_users']),
+            "test_f1_users": float(rule_hybrid_04['test_f1_users']),
+            "plateau": f"{rule_hybrid_04['plateau_lo']:.2f}-{rule_hybrid_04['plateau_hi']:.2f}",
+            "top5_val": rule_hybrid_04['top5'],
+        },
+        "hybrid_05": {
+            "alpha": 0.5,
+            "window": 3,
+            "best_threshold": float(rule_hybrid_05['best_threshold']),
+            "val_f1_users": float(rule_hybrid_05['val_f1_users']),
+            "test_f1_users": float(rule_hybrid_05['test_f1_users']),
+            "plateau": f"{rule_hybrid_05['plateau_lo']:.2f}-{rule_hybrid_05['plateau_hi']:.2f}",
+            "top5_val": rule_hybrid_05['top5'],
+        },
+        "isotonic": {
+            "best_threshold": float(rule_iso['best_threshold']),
+            "val_f1_users": float(rule_iso['val_f1_users']),
+            "test_f1_users": float(rule_iso['test_f1_users']),
+            "plateau": f"{rule_iso['plateau_lo']:.2f}-{rule_iso['plateau_hi']:.2f}",
+            "top5_val": rule_iso['top5'],
+        },
+    },
 }
 save_threshold(run_dir, threshold_info)
 
-copy_file(run_dir, "D:/dataset/bilstm_best.pt", "")
+copy_file(run_dir, "D:/dataset/bilstm_best.pt")
 copy_file(run_dir, log_file)
 copy_file(run_dir, "D:/dataset/bilstm_training.png", "plots")

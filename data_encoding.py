@@ -46,17 +46,17 @@ print(f"Итого размер словаря: {len(token_to_id)}")
 print("\n3. Создание весов токенов")
 
 token_weights = {
-    'http_other': 0.1,        # пониженный
+    'http_other': 0.1,
     'email_internal': 0.5,
     'email_external': 1.0,
-    'http_job': 2.0,          # повышенный
+    'http_job': 2.0,
     'http_social': 0.5,
     'email_attach': 1.0,
     'logon': 1.0,
     'logoff': 1.0,
-    'file_sensitive': 2.0,    # повышенный
-    'http_hack': 3.0,         # сильно повышенный
-    'http_leak': 3.0,         # сильно повышенный
+    'file_sensitive': 2.0,
+    'http_hack': 3.0,
+    'http_leak': 3.0,
     'http_cloud': 1.5,
     'http_email_service': 1.0,
     'device_connect': 2.0,
@@ -173,6 +173,34 @@ print(f"Пересечение train/test: {len(set(train_users) & set(test_user
 print(f"Пересечение val/test: {len(set(val_users) & set(test_users))}")
 
 print("\n7. Сохранение данных")
+
+def add_lag_features(df):
+    df = df.sort_values(['user', 'day']).copy()
+    # full_length добавляем в pkl 
+    if 'full_length' not in df.columns:
+        df['full_length'] = df['sequence_length']  # fallback, если нет
+    df['full_length_norm'] = df['full_length'] / df['full_length'].max()
+
+    # лаги по известным меткам прошлых дней (без утечки будущего)
+    df['prev_label'] = df.groupby('user')['has_anomaly'].shift(1).fillna(0)
+
+    df['days_since_anom'] = (
+        df.groupby('user')['has_anomaly']
+          .transform(lambda s: s.shift(1).eq(0).cumsum())
+          .fillna(0)
+    )
+    # нормируем days_since_anom без разброса
+    df['days_since_anom_norm'] = df['days_since_anom'] / 30.0
+    return df
+
+train_df = add_lag_features(train_df)
+val_df = add_lag_features(val_df)
+test_df = add_lag_features(test_df)
+
+for name, d in [('train', train_df), ('val', val_df), ('test', test_df)]:
+    print(f"{name}: full_length max={d['full_length'].max():.0f}, "
+          f"prev_label sum={d['prev_label'].sum():.0f}, "
+          f"days_since_anom max={d['days_since_anom'].max():.0f}")
 
 with open("D:/dataset/token_to_id.pkl", 'wb') as f:
     pickle.dump(token_to_id, f)
