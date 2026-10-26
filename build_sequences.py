@@ -25,6 +25,15 @@ http   = download_type(5, "http", data_path, ['user','date','url','is_true_bad']
 
 print(f"\nВремя загрузки: {time.time()-start} секунд")
 
+print(f"Загружено событий: {len(logon)}, {len(device)}")
+print(f"Положительных: logon={logon['is_true_bad'].sum()}")
+
+print(f"\ndevice: {len(device)} строк, положительных: {device['is_true_bad'].sum()} (ожидалось 2785)")
+print(f"http: {len(http)} строк, положительных: {http['is_true_bad'].sum()} (ожидалось 3860)")
+print(f"file: {len(file)} строк, положительных: {file['is_true_bad'].sum()} (ожидалось 10)")
+print(f"email: {len(email)} строк, положительных: {email['is_true_bad'].sum()} (ожидалось 470)")
+print(f"logon: {len(logon)} строк, положительных: {logon['is_true_bad'].sum()} (ожидалось 198)")
+
 print("\nВТОРОЙ ЭТАП: ПРЕОБРАЗОВАНИЕ ДАТ")
 
 start = time.time()
@@ -94,6 +103,8 @@ if current_logon is not None:
 sessions_df = pd.DataFrame(sessions)
 print(f"Всего сессий: {len(sessions_df)}")
 print(f"Уникальных пользователей: {sessions_df['user'].nunique()}")
+print(f"Аномальных меток в logon: {logon['is_true_bad'].sum()}")
+print(f"Аномальных меток в sessions_df: {sessions_df['is_true_bad'].sum()}")
 print(f"Время: {time.time()-start} секунд")
 
 print("\nЧЕТВЁРТЫЙ ЭТАП: СБОР ДЕЙСТВИЙ ВНУТРИ СЕССИЙ")
@@ -123,11 +134,22 @@ def attach_session(events, sessions):
     return merged
 
 device_s = attach_session(device, sessions_sorted)
-http_s   = attach_session(http, sessions_sorted)
-file_s   = attach_session(file, sessions_sorted)
-email_s  = attach_session(email, sessions_sorted)
+http_s = attach_session(http, sessions_sorted)
+file_s = attach_session(file, sessions_sorted)
+email_s = attach_session(email, sessions_sorted)
+
+device_before = device[device['parsed_date'] < sessions_sorted['start'].min()]
+print(f"device-событий до первой сессии: {len(device_before)}")
+
+device_after = device[device['parsed_date'] > sessions_sorted['end'].max()]
+print(f"device-событий после последней: {len(device_after)}")
 
 print(f"device_s: {len(device_s)}, http_s: {len(http_s)}, file_s: {len(file_s)}, email_s: {len(email_s)}")
+
+print(f"Аномальных device_s: {device_s['is_true_bad'].sum()}")
+print(f"Аномальных http_s: {http_s['is_true_bad'].sum()}")
+print(f"Аномальных file_s: {file_s['is_true_bad'].sum()}")
+print(f"Аномальных email_s: {email_s['is_true_bad'].sum()}")
 
 # device
 device_s['action'] = np.where(
@@ -211,6 +233,9 @@ logoff_actions = logoff_actions.rename(columns={'end': 'parsed_date'})
 logoff_actions['action'] = 'logoff'
 logoff_actions['is_true_bad'] = 0
 
+print(f"Сессий: {len(sessions_df)}")
+print(f"Положительных сессий: {sessions_df['is_true_bad'].sum()}")
+
 all_actions = pd.concat([
     all_actions,
     logon_actions[['session_id', 'user', 'parsed_date', 'action', 'is_true_bad']],
@@ -226,6 +251,9 @@ seq_df = all_actions.groupby('session_id').agg(
     has_anomaly=('is_true_bad', 'max'),
 ).reset_index()
 
+print(f"Финальных действий: {len(all_actions)}")
+print(f"Положительных действий: {all_actions['is_true_bad'].sum()}")
+
 # добавляем start и end из sessions_df
 seq_df = seq_df.merge(
     sessions_df[['session_id', 'start', 'end']],
@@ -239,6 +267,11 @@ print(f"Аномальных сессий: {seq_df['has_anomaly'].sum()}")
 print(f"Средняя длина: {seq_df['sequence_length'].mean():.1f}")
 print(f"Максимальная длина: {seq_df['sequence_length'].max()}")
 print(f"Время обработки: {time.time()-start:.1f} секунд")
+
+print(f"\nМеток в logon_labeled: {logon['is_true_bad'].sum()}")
+print(f"Меток в сессиях (из logon): {sessions_df['is_true_bad'].sum()}")
+print(f"Меток в действиях (без logon/logoff): {all_actions['is_true_bad'].sum()}")
+print(f"Аномальных сессий: {seq_df['has_anomaly'].sum()}")
 
 print("\nПЯТЫЙ ЭТАП: СОХРАНЕНИЕ")
 seq_df.to_csv(output_path + "sequences.csv", index=False)

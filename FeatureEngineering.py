@@ -92,7 +92,7 @@ def process_device_file(labeled_file_path):
     return result
 
 def merge_two_features(df_left, df_right, left_name, right_name):
-    print(f"\nОбъединение {left_name} и {right_name}...")
+    print(f"\nОбъединение {left_name} и {right_name}")
     
     df_left['day'] = df_left['day'].astype(str)
     df_right['day'] = df_right['day'].astype(str)
@@ -229,7 +229,7 @@ def add_insider_labels(df, labels_dict):
     return df
 
 def process_http_file(file_path):
-    print("\nАГРЕГАЦИЯ HTTP...")
+    print("\nАГРЕГАЦИЯ HTTP")
     start = time.time()
     
     df = pd.read_csv(file_path, usecols=['user', 'date', 'url', 'is_true_bad'])
@@ -340,10 +340,10 @@ if __name__ == "__main__":
     # После добавления LDAP и психометрики
     domain_features = pd.read_csv("D:/dataset/domain_features.csv")
     
-    # Объединяем
-    combined = combined.merge(domain_features, on='user', how='left')
+    combined['day'] = combined['day'].astype(str)
+    domain_features['day'] = domain_features['day'].astype(str)
+    combined = combined.merge(domain_features, on=['user', 'day'], how='left')
 
-    # Заполняем пропуски нулями
     combined = combined.fillna(0)
 
     print(f"\nПосле добавления доменных признаков: {combined.shape}")

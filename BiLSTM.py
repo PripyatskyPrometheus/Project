@@ -12,6 +12,7 @@ import time
 import matplotlib.pyplot as plt
 import logging
 import sys
+from save_run import *
 
 log_file = "D:/dataset/log/bilstm.log"
 
@@ -141,7 +142,7 @@ def eval_epoch(model, loader, criterion, device):
 
 
 def calculate_metrics(labels, probs, threshold=0.5):
-    preds = (probs > threshold).astype(int)
+    preds = (probs >= threshold).astype(int)
     p, r, f1, _ = precision_recall_fscore_support(labels, preds, average='binary', zero_division=0)
     auroc = roc_auc_score(labels, probs)
     auprc = average_precision_score(labels, probs)
@@ -220,8 +221,7 @@ logger.info("\nАрхитектура модели:")
 logger.info(model)
 
 pos_weight_tensor = torch.FloatTensor([pos_weight_sqrt]).to(device)
-criterion_train = nn.BCEWithLogitsLoss(pos_weight=pos_weight_tensor)
-criterion_eval = nn.BCEWithLogitsLoss()
+criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight_tensor)
 
 optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
 
@@ -245,9 +245,9 @@ start_time = time.time()
 for epoch in range(N_EPOCHS):
     epoch_start = time.time()
 
-    train_loss = train_epoch(model, train_loader, criterion_train, optimizer, device)
+    train_loss = train_epoch(model, train_loader, criterion, optimizer, device)
 
-    val_loss, val_probs, val_labels = eval_epoch(model, val_loader, criterion_eval, device)
+    val_loss, val_probs, val_labels = eval_epoch(model, val_loader, criterion, device)
     val_p, val_r, val_f1, val_auroc, val_auprc = calculate_metrics(val_labels, val_probs)
 
     train_losses.append(train_loss)
@@ -298,7 +298,7 @@ model_eval = InsiderBiLSTM(
 model_eval.load_state_dict(torch.load("D:/dataset/bilstm_best.pt"))
 model_eval.eval()
 
-test_loss, test_probs, test_labels = eval_epoch(model_eval, test_loader, criterion_eval, device)
+test_loss, test_probs, test_labels = eval_epoch(model_eval, test_loader, criterion, device)
 test_p, test_r, test_f1, test_auroc, test_auprc = calculate_metrics(test_labels, test_probs)
 
 logger.info(f"\nРЕЗУЛЬТАТЫ НА ТЕСТЕ (порог 0.5):")
@@ -310,7 +310,7 @@ logger.info(f"AUPRC: {test_auprc:.4f}")
 
 logger.info("\nПОДБОР ОПТИМАЛЬНОГО ПОРОГА НА VAL")
 
-val_loss, val_probs, val_labels = eval_epoch(model_eval, val_loader, criterion_eval, device)
+val_loss, val_probs, val_labels = eval_epoch(model_eval, val_loader, criterion, device)
 
 precisions, recalls, thresholds = precision_recall_curve(val_labels, val_probs)
 f1s = 2 * precisions * recalls / (precisions + recalls + 1e-9)
@@ -348,7 +348,7 @@ logger.info(f"\nВсего пользователей: {len(user_probs)}")
 logger.info(f"Пользователей с аномалиями: {user_labels.sum()}")
 
 for th in [0.3, 0.5, best_threshold]:
-    preds = (user_probs > th).astype(int)
+    preds = (user_probs >= th).astype(int)
     p = precision_score(user_labels, preds, zero_division=0)
     r = recall_score(user_labels, preds, zero_division=0)
     f1 = f1_score(user_labels, preds, zero_division=0)
@@ -397,19 +397,22 @@ bad_users_df = bad_users_df[bad_users_df['is_bad'] == 1].sort_values('n_anomalie
 
 logger.info(f"\n{'user':>12} {'аномалий':>10} {'max_prob':>10} {'пойман?':>8}")
 for user, row in bad_users_df.iterrows():
-    caught = "ДА" if row['max_prob'] > best_threshold else "нет"
+    caught = "ДА" if row['max_prob'] >= best_threshold else "нет"
     logger.info(f"{user:>12} {int(row['n_anomalies']):>10} {row['max_prob']:>10.4f} {caught:>8}")
 
 logger.info("\nШЕСТОЙ ЭТАП: СОХРАНЕНИЕ")
 
 results = {
     'model': 'BiLSTM',
-    'precision_sessions': test_p,
-    'recall_sessions': test_r,
-    'f1_sessions': test_f1,
+    'best_threshold': best_threshold,
+    'precision_sessions': p_best,
+    'recall_sessions': r_best,
+    'f1_sessions': f1_best,
     'auroc': test_auroc,
     'auprc': test_auprc,
-    'best_threshold': best_threshold,
+    'precision_at_05': test_p,
+    'recall_at_05': test_r,
+    'f1_at_05': test_f1,
 }
 pd.DataFrame([results]).to_csv("D:/dataset/bilstm_results.csv", index=False)
 logger.info(f"Результаты сохранены: D:/dataset/bilstm_results.csv")
@@ -445,3 +448,90 @@ plt.tight_layout()
 plt.savefig("D:/dataset/bilstm_training.png", dpi=150)
 plt.close()
 logger.info("Графики сохранены: D:/dataset/bilstm_training.png")
+
+logger.info('')
+logger.info('Сохраняем версию прогона')
+run_dir = make_run_dir("bilstm")
+
+config = {
+    "model": "BiLSTM",
+    "embedding_dim": 64,
+    "hidden_dim": 120,
+    "num_layers": 2,
+    "dropout": 0.4,
+    "batch_size": 128,
+    "lr": 0.001,
+    "weight_decay": 1e-5,
+    "pos_weight": float(pos_weight),
+    "pos_weight_sqrt": float(np.sqrt(pos_weight)),
+    "max_len": 250,
+    "n_epochs": 30,
+    "patience": 5,
+    "random_seed": 42,
+}
+save_config(run_dir, config)
+
+# Версии данных и кода
+data_files = {
+    "train_sequences": "D:/dataset/train_sequences.pkl",
+    "val_sequences": "D:/dataset/val_sequences.pkl",
+    "test_sequences": "D:/dataset/test_sequences.pkl",
+    "token_to_id": "D:/dataset/token_to_id.pkl",
+    "token_weights": "D:/dataset/token_weights.npy",
+    "pos_weight": "D:/dataset/pos_weight.npy",
+}
+code_files = {
+    "BiLSTM.py": "C:/Users/User/Project/BiLSTM.py",
+    "data_encoding.py": "C:/Users/User/Project/data_encoding.py",
+}
+save_versions(run_dir, data_files, code_files)
+
+# Split
+save_split(run_dir, train_users, val_users, test_users)
+
+# Predictions
+train_pred = train_df.copy()
+train_pred['prob'] = train_probs
+save_predictions(run_dir, "train_probs", train_pred[['user', 'prob', 'has_anomaly']])
+
+val_pred = val_df.copy()
+val_pred['prob'] = val_probs
+save_predictions(run_dir, "val_probs", val_pred[['user', 'prob', 'has_anomaly']])
+
+test_pred = test_df.copy()
+test_pred['prob'] = test_probs
+save_predictions(run_dir, "test_probs", test_pred[['user', 'prob', 'has_anomaly']])
+
+# Метрики
+metrics = {
+    "sessions": {
+        "precision": float(test_p),
+        "recall": float(test_r),
+        "f1": float(test_f1),
+        "auroc": float(test_auroc),
+        "auprc": float(test_auprc),
+    },
+    "users": {
+        "f1_at_083": float(f1_base_083),
+        "f1_at_best_threshold": float(f1_best),
+        "best_threshold": float(best_threshold),
+    },
+    "best_epoch": best_epoch,
+    "best_val_auprc": float(best_val_auprc),
+    "training_time_min": float(total_time / 60),
+}
+save_metrics(run_dir, metrics)
+
+# Порог
+threshold_info = {
+    "best_threshold": float(best_threshold),
+    "selection_metric": "val_f1_users",
+    "f1_at_05": float(test_f1),
+    "f1_at_best": float(f1_best),
+}
+save_threshold(run_dir, threshold_info)
+
+# Копируем модель, лог, график
+copy_file(run_dir, "D:/dataset/bilstm_best.pt", "model.pt")
+copy_file(run_dir, log_file)
+copy_file(run_dir, "D:/dataset/bilstm_training.png", "plots")

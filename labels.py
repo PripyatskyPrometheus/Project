@@ -4,6 +4,21 @@ import time
 import os
 
 def load_all_true_bad_ids(answers_path):
+    if not os.path.exists(answers_path):
+        raise FileNotFoundError(f"Папка answer не найдена: {answers_path}")
+
+    r42_dirs = ['r4.2-1', 'r4.2-2', 'r4.2-3']
+    for d in r42_dirs:
+        dirpath = os.path.join(answers_path, d)
+        if not os.path.exists(dirpath):
+            raise FileNotFoundError(f"Папка answer не найдена: {dirpath}")
+
+        csv_files = [f for f in os.listdir(dirpath) if f.endswith('.csv')]
+        if len(csv_files) == 0:
+            raise FileNotFoundError(f"В папке нет CSV: {dirpath}")
+
+        print(f"{d}: {len(csv_files)} CSV файлов")
+
     print("\nВыгружаем точные метки инсайдеров: их конкретные действия")
     
     true_bad_ids = {}

@@ -254,11 +254,13 @@ rf = RandomForestClassifier(
 rf.fit(X_train, y_train)
 
 y_train_proba = rf.predict_proba(X_train)[:, 1]
-y_train_pred = (y_train_proba >= 0.5).astype(int)
+y_val_proba = rf.predict_proba(X_val)[:, 1]
+
+best_thresh_rf = find_best_threshold(y_val, y_val_proba)
+
+y_train_pred = (y_train_proba >= best_thresh_rf).astype(int)
 print_metrics("Random Forest", y_train, y_train_pred, y_train_proba, "Train")
 
-y_val_proba = rf.predict_proba(X_val)[:, 1]
-best_thresh_rf = find_best_threshold(y_val, y_val_proba)
 y_val_pred = (y_val_proba >= best_thresh_rf).astype(int)
 print_metrics("Random Forest", y_val, y_val_pred, y_val_proba, "Val")
 print(f"  Оптимальный порог: {best_thresh_rf}")
@@ -299,13 +301,15 @@ xgb = XGBClassifier(
 xgb.fit(X_train, y_train)
 
 y_train_proba = xgb.predict_proba(X_train)[:, 1]
-y_train_pred = (y_train_proba >= 0.5).astype(int)
-print_metrics("XGBoost", y_train, y_train_pred, y_train_proba, "Train")
-
 y_val_proba = xgb.predict_proba(X_val)[:, 1]
 
 best_thresh_xgb = find_best_threshold(y_val, y_val_proba)
-print(f"\nОптимальный порог: {best_thresh_xgb} (вычислен автоматически)")
+
+y_train_pred = (y_train_proba >= best_thresh_xgb).astype(int)
+print_metrics("XGBoost", y_train, y_train_pred, y_train_proba, "Train")
+
+y_val_pred = (y_val_proba >= best_thresh_xgb).astype(int)
+print_metrics("XGBoost", y_val, y_val_pred, y_val_proba, "Val")
 
 candidate_thresh = None
 best_f1 = 0

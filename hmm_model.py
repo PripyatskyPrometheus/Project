@@ -1,14 +1,15 @@
-# hmm_tuning.py
+# hmm_model.py
 import pandas as pd
 import numpy as np
 from sklearn.metrics import f1_score, precision_score, recall_score
 import logging
 import sys
 import os
+from save_run import *
 
-log_file = "D:/dataset/log/hmm_tuning.log"
+log_file = "D:/dataset/log/hmm_model.log"
 
-logger = logging.getLogger('HMM_Tuning')
+logger = logging.getLogger('HMM_Model')
 logger.setLevel(logging.INFO)
 
 formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
@@ -22,7 +23,7 @@ console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
 class SimpleHMM:
-    def __init__(self, trans_matrix=None, window=20):
+    def __init__(self, trans_matrix=None, window=20, pi=None):
         if trans_matrix is None:
             self.A = np.array([
                 [0.95, 0.05],
@@ -31,7 +32,11 @@ class SimpleHMM:
         else:
             self.A = np.array(trans_matrix)
 
-        self.pi = np.array([0.99, 0.01])
+        if pi is None:
+            self.pi = np.array([0.99, 0.01])
+        else:
+            self.pi = np.array(pi)
+
         self.window = window
 
     def forward_score(self, probs_sequence):
@@ -133,32 +138,33 @@ logger.info("")
 logger.info("ПЕРЕБОР КОНФИГУРАЦИЙ HMM")
 
 configs = [
-    ("baseline_0.95_0.05_w20", [[0.95, 0.05], [0.05, 0.95]], 20),
-    ("w10", [[0.95, 0.05], [0.05, 0.95]], 10),
-    ("w15", [[0.95, 0.05], [0.05, 0.95]], 15),
-    ("w30", [[0.95, 0.05], [0.05, 0.95]], 30),
-    ("w50", [[0.95, 0.05], [0.05, 0.95]], 50),
-    ("w100", [[0.95, 0.05], [0.05, 0.95]], 100),
-    ("w20_high_inertia", [[0.95, 0.05], [0.01, 0.99]], 20),
-    ("w20_low_inertia", [[0.90, 0.10], [0.10, 0.90]], 20),
-    ("w20_asym", [[0.98, 0.02], [0.05, 0.95]], 20),
-    ("w20_no_prior", [[0.95, 0.05], [0.05, 0.95]], 20),
+    ("baseline_0.95_0.05_w20", [[0.95, 0.05], [0.05, 0.95]], 20, None),
+    ("w10", [[0.95, 0.05], [0.05, 0.95]], 10, None),
+    ("w15", [[0.95, 0.05], [0.05, 0.95]], 15, None),
+    ("w30", [[0.95, 0.05], [0.05, 0.95]], 30, None),
+    ("w50", [[0.95, 0.05], [0.05, 0.95]], 50, None),
+    ("w100", [[0.95, 0.05], [0.05, 0.95]], 100, None),
+    ("w20_high_inertia", [[0.95, 0.05], [0.01, 0.99]], 20, None),
+    ("w20_low_inertia", [[0.90, 0.10], [0.10, 0.90]], 20, None),
+    ("w20_asym", [[0.98, 0.02], [0.05, 0.95]], 20, None),
+    ("w20_no_prior", [[0.95, 0.05], [0.05, 0.95]], 20, [0.5, 0.5])
 ]
 
 results = []
 
-for name, matrix, window in configs:
-    logger.info(f"\nКонфигурация: {name}")
-    logger.info(f"Матрица: {matrix}, окно: {window}")
+for name, matrix, window, pi in configs:
+    logger.info(f"")
+    logger.info(f"Конфигурация: {name}")
+    logger.info(f"Матрица: {matrix}, окно: {window}, pi: {pi}")
 
-    hmm = SimpleHMM(trans_matrix=matrix, window=window)
+    hmm = SimpleHMM(trans_matrix=matrix, window=window, pi=pi)
 
     val_hmm = np.array([hmm.sequence_to_user_score(p) for p in val_probs_list])
 
     best_f1_val = 0
     best_thresh = 0.5
     for th in np.arange(0.1, 1.0, 0.01):
-        preds = (val_hmm > th).astype(int)
+        preds = (val_hmm >= th).astype(int)
         f1 = f1_score(val_labels, preds, zero_division=0)
         if f1 > best_f1_val:
             best_f1_val = f1
@@ -166,7 +172,7 @@ for name, matrix, window in configs:
 
     test_hmm = np.array([hmm.sequence_to_user_score(p) for p in test_probs_list])
 
-    preds_test = (test_hmm > best_thresh).astype(int)
+    preds_test = (test_hmm >= best_thresh).astype(int)
     p_test = precision_score(test_labels, preds_test, zero_division=0)
     r_test = recall_score(test_labels, preds_test, zero_division=0)
     f1_test = f1_score(test_labels, preds_test, zero_division=0)
@@ -192,7 +198,7 @@ for name, matrix, window in configs:
 logger.info("")
 logger.info("СВОДНАЯ ТАБЛИЦА (TEST)")
 
-df_results = pd.DataFrame(results).sort_values('test_f1', ascending=False)
+df_results = pd.DataFrame(results).sort_values('val_f1', ascending=False)
 
 logger.info("")
 logger.info(f"{'Конфигурация':>25} {'окно':>5} {'th':>5} {'P':>7} {'R':>7} {'F1':>7} {'Поймано':>8}")
@@ -203,7 +209,7 @@ for _, row in df_results.iterrows():
 logger.info("")
 logger.info("СРАВНЕНИЕ С BiLSTM max prob, порог = 0.83")
 
-preds_base = (test_max_prob > 0.83).astype(int)
+preds_base = (test_max_prob >= 0.83).astype(int)
 p_base = precision_score(test_labels, preds_base, zero_division=0)
 r_base = recall_score(test_labels, preds_base, zero_division=0)
 f1_base = f1_score(test_labels, preds_base, zero_division=0)
@@ -220,12 +226,12 @@ logger.info("")
 logger.info(f"АНАЛИЗ ЛУЧШЕЙ КОНФИГУРАЦИИ: {best_row['name']}")
 
 best_config = None
-for name, matrix, window in configs:
+for name, matrix, window, pi in configs:
     if name == best_row['name']:
-        best_config = (matrix, window)
+        best_config = (matrix, window, pi)
         break
 
-hmm_best = SimpleHMM(trans_matrix=best_config[0], window=best_config[1])
+hmm_best = SimpleHMM(trans_matrix=best_config[0], window=best_config[1], pi=best_config[2])
 test_hmm_best = np.array([hmm_best.sequence_to_user_score(p) for p in test_probs_list])
 preds_best = (test_hmm_best > best_row['best_thresh']).astype(int)
 
@@ -238,8 +244,8 @@ for i, user in enumerate(users_test):
     hmm_score = test_hmm_best[i]
     max_p = max(test_seqs[user]['probs'])
     n_sessions = test_seqs[user]['n_sessions']
-    caught_hmm = "ДА" if hmm_score > best_row['best_thresh'] else "нет"
-    caught_base = "ДА" if max_p > 0.83 else "нет"
+    caught_hmm = "ДА" if hmm_score >= best_row['best_thresh'] else "нет"
+    caught_base = "ДА" if max_p >= 0.83 else "нет"
 
     rows.append({
         'user': user,
@@ -260,3 +266,78 @@ for _, row in df_users.iterrows():
 
 logger.info("")
 logger.info("ГОТОВО")
+
+run_dir = make_run_dir("hmm")
+
+config = {
+    "model": "HMM",
+    "n_states": 2,
+    "trans_matrix": [[0.95, 0.05], [0.05, 0.95]],
+    "window": 20,
+    "pi": [0.99, 0.01],
+    "best_threshold": float(best_thresh_hmm),
+    "selection_metric": "val_f1",
+}
+save_config(run_dir, config)
+
+data_files = {
+    "train_with_probs": "D:/dataset/train_with_probs.pkl",
+    "val_with_probs": "D:/dataset/val_with_probs.pkl",
+    "test_with_probs": "D:/dataset/test_with_probs.pkl",
+    "bilstm_model": "D:/dataset/bilstm_best.pt",
+}
+code_files = {
+    "hmm_model.py": "C:/Users/User/Project/hmm_model.py",
+    "BiLSTM.py": "C:/Users/User/Project/BiLSTM.py",
+}
+save_versions(run_dir, data_files, code_files)
+
+train_users = list(train_seqs.keys())
+val_users = list(val_seqs.keys())
+test_users = list(test_seqs.keys())
+save_split(run_dir, train_users, val_users, test_users)
+
+test_pred = pd.DataFrame({
+    'user': list(test_scores.keys()),
+    'hmm_score': [test_scores[u]['score'] for u in test_scores.keys()],
+    'max_prob': [max(test_seqs[u]['probs']) for u in test_scores.keys()],
+    'label': [test_scores[u]['label'] for u in test_scores.keys()],
+})
+save_predictions(run_dir, "test_hmm_scores", test_pred)
+
+val_pred = pd.DataFrame({
+    'user': list(val_scores.keys()),
+    'hmm_score': [val_scores[u]['score'] for u in val_scores.keys()],
+    'max_prob': [max(val_seqs[u]['probs']) for u in val_scores.keys()],
+    'label': [val_scores[u]['label'] for u in val_scores.keys()],
+})
+save_predictions(run_dir, "val_hmm_scores", val_pred)
+
+metrics = {
+    "hmm": {
+        "precision": float(p_hmm),
+        "recall": float(r_hmm),
+        "f1": float(f1_hmm),
+        "caught": int(preds_hmm[test_labels == 1].sum()),
+        "total": int(test_labels.sum()),
+    },
+    "baseline_max_prob_083": {
+        "precision": float(p_base_083),
+        "recall": float(r_base_083),
+        "f1": float(f1_base_083),
+        "caught": int(preds_base_083[test_labels == 1].sum()),
+        "total": int(test_labels.sum()),
+    },
+}
+save_metrics(run_dir, metrics)
+
+threshold_info = {
+    "best_threshold_hmm": float(best_thresh_hmm),
+    "best_threshold_baseline": float(best_thresh_base),
+    "selection_metric": "val_f1",
+    "f1_at_best_hmm": float(f1_hmm),
+    "f1_at_baseline_083": float(f1_base_083),
+}
+save_threshold(run_dir, threshold_info)
+
+copy_file(run_dir, log_file)

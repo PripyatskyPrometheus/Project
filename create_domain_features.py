@@ -18,10 +18,10 @@ def extract_domain(url):
         return 'unknown'
 
 print("\n1. Загрузка http_labeled.csv")
-http_df = pd.read_csv("D:/dataset/labels/http_labeled.csv", usecols=['user', 'url', 'is_true_bad'])
+http_df = pd.read_csv("D:/dataset/labels/http_labeled.csv", usecols=['user', 'date', 'url', 'is_true_bad'])
 print(f"   Всего записей: {len(http_df)}")
 
-print("\n2. Извлечение доменов...")
+print("\n2. Извлечение доменов")
 
 http_df['domain'] = http_df['url'].apply(extract_domain)
 
@@ -44,7 +44,6 @@ print(f"   Домен 'unknown': {unknown_count} записей ({unknown_percen
 if unknown_percent > 5:
     print(f"   ВНИМАНИЕ: более 5% доменов не распознаны!")
 
-# 5. ПРОВЕРКА НА ПУСТЫЕ URL
 print("\n5. Проверка на пустые URL:")
 
 empty_urls = http_df['url'].isna().sum()
@@ -56,26 +55,44 @@ print("\n6. Проверка на длинные домены (>50 символ�
 long_domains = http_df[http_df['domain'].str.len() > 50]
 print(f"   Длинных доменов (>50 символов): {len(long_domains)}")
 
-# 7. СТАТИСТИКА ПО ПОЛЬЗОВАТЕЛЯМ
 print("\n7. Статистика по пользователям:")
 
-# Группируем по пользователю
-user_stats = http_df.groupby('user').agg(
-    total_requests=('url', 'count'),
-    unique_domains=('domain', 'nunique')
-).reset_index()
+http_df['parsed_date'] = pd.to_datetime(http_df['date'], format='%m/%d/%Y %H:%M:%S')
+http_df['day'] = http_df['parsed_date'].dt.date
 
-print(f"   Всего пользователей: {len(user_stats)}")
-print(f"   Среднее число запросов на пользователя: {user_stats['total_requests'].mean():.1f}")
-print(f"   Медиана запросов на пользователя: {user_stats['total_requests'].median():.0f}")
-print(f"   Максимум запросов у одного пользователя: {user_stats['total_requests'].max()}")
+http_df_sorted = http_df.sort_values(['user', 'parsed_date']).reset_index(drop=True)
+
+result_rows = []
+
+for user, group in http_df_sorted.groupby('user'):
+    cumulative_requests = 0
+    seen_domains = set()
+
+    for day, day_group in group.groupby('day', sort=True):
+        cumulative_requests += len(day_group)
+        seen_domains.update(day_group['domain'].unique())
+
+        result_rows.append({
+            'user': user,
+            'day': day,
+            'total_requests_until_t': cumulative_requests,
+            'unique_domains_until_t': len(seen_domains),
+        })
+
+user_stats = pd.DataFrame(result_rows)
+
+print(f"   Всего записей (пользователь-день): {len(user_stats)}")
+print(f"   Уникальных пользователей: {user_stats['user'].nunique()}")
+print(f"   Среднее запросов на конец периода: {user_stats.groupby('user')['total_requests_until_t'].max().mean():.1f}")
 
 print("\n8. Пользователи с аномальной активностью:")
 
-top_users = user_stats.nlargest(5, 'total_requests')
-print("\n   Топ-5 по числу запросов:")
+last_day_per_user = user_stats.groupby('user').last().reset_index()
+top_users = last_day_per_user.nlargest(5, 'total_requests_until_t')
+
+print("\n   Топ-5 по числу запросов (на конец периода):")
 for _, row in top_users.iterrows():
-    print(f"    {row['user']}: {row['total_requests']} запросов, {row['unique_domains']} доменов")
+    print(f"    {row['user']}: {row['total_requests_until_t']} запросов, {row['unique_domains_until_t']} доменов")
 
 print("\n9. Сохранение результата:")
 
@@ -90,10 +107,10 @@ print("ИТОГИ:")
 print(f"""
 Обработано записей:   {len(http_df)}
 Уникальных доменов:   {unique_domains}
-Пользователей:        {len(user_stats)}
+Пользователей:        {user_stats['user'].nunique()}
+Записей (user-day):   {len(user_stats)}
 'unknown' доменов:    {unknown_count} ({unknown_percent:.2f}%)
 Пустых URL:           {empty_urls} ({empty_urls_percent:.2f}%)
-Среднее запросов:     {user_stats['total_requests'].mean():.1f}
 """)
 
 if unknown_percent > 5:
