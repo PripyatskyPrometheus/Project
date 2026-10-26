@@ -5,7 +5,6 @@ import ast
 import pickle
 from sklearn.model_selection import train_test_split
 
-
 print("КОДИРОВАНИЕ ТОКЕНОВ И ПОДГОТОВКА ДАННЫХ для обучения")
 
 print("\n1. Загрузка последовательностей из sequences.csv")
@@ -18,7 +17,7 @@ assert df['has_anomaly'].isna().sum() == 0, "has_anomaly содержит NaN!!!
 df['has_anomaly'] = df['has_anomaly'].astype(int)
 print(f"has_anomaly type: {df['has_anomaly'].dtype}, NaN: 0")
 
-print(f"Всего сессий: {len(df)}")
+print(f"Всего (user, day): {len(df)}")
 print(f"Аномальных: {df['has_anomaly'].sum()} ({df['has_anomaly'].mean()*100:.2f}%)")
 
 print(df.head())
@@ -109,12 +108,16 @@ def mask_for_pad(seq, max_len=MAX_LEN):
 df['mask'] = df['encoded'].apply(lambda x: mask_for_pad(x))
 
 truncated = (df['encoded_length'] > MAX_LEN).sum()
-print(f"\nСессий длиннее {MAX_LEN}: {truncated} ({truncated/len(df)*100:.2f}%)")
+truncated_anom = df[df['encoded_length'] > MAX_LEN]['has_anomaly'].sum()
+print(f"\nДней длиннее {MAX_LEN}: {truncated} ({truncated/len(df)*100:.2f}%)")
+print(f"Из них аномальных: {truncated_anom}")
+print(f"Аномальных последовательностей после padding: {df['has_anomaly'].sum()}")
 print(f"Максимальная длина: {df['encoded_length'].max()}")
 
 sample = df.iloc[0]['padded']
 print(f"Пример: {sample[:10]}")
 print(f"Длина после padding: {len(sample)}")
+
 
 print("\n6. Разделение на train/val/test по пользователям")
 
@@ -161,9 +164,9 @@ print(f"Максимум аномалий у одного пользовател
 print(f"Топ-5 пользователей по аномалиям:")
 print(user_anomalies.sort_values(ascending=False).head(5))
 
-print(f"\nTrain: {len(train_df)} сессий ({train_df['has_anomaly'].sum()} аномалий)")
-print(f"Val: {len(val_df)} сессий ({val_df['has_anomaly'].sum()} аномалий)")
-print(f"Test: {len(test_df)} сессий ({test_df['has_anomaly'].sum()} аномалий)")
+print(f"\nTrain: {len(train_df)} (user, day) ({train_df['has_anomaly'].sum()} аномалий)")
+print(f"Val: {len(val_df)} (user, day) ({val_df['has_anomaly'].sum()} аномалий)")
+print(f"Test: {len(test_df)} (user, day) ({test_df['has_anomaly'].sum()} аномалий)")
 
 print(f"\nПересечение train/val: {len(set(train_users) & set(val_users))}")
 print(f"Пересечение train/test: {len(set(train_users) & set(test_users))}")
