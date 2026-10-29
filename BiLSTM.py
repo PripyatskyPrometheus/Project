@@ -32,7 +32,7 @@ logger.addHandler(console_handler)
 
 # Дополнительные признаки дня (кроме последовательности токенов) для корреляции
 # EXTRA_COLS = ['full_length_norm', 'prev_label', 'days_since_anom_norm']
-EXTRA_COLS = ['full_length']
+EXTRA_COLS = ['full_length_norm']
 N_EXTRA = len(EXTRA_COLS)
 
 
@@ -176,39 +176,49 @@ def user_level_probs(df, prob_col):
     return g[prob_col].max(), g['has_anomaly'].max()
 
 
-# def select_user_threshold(val_probs_series, val_labels_series, grid=np.arange(0.05, 0.96, 0.01), plateau_delta=0.02):
-#     """Подбор порога по F1 пользователей на val. Находит лучший порог, топ-5 и диапазон порогов,
-#         где F1 в пределах plateau_delta от лучшего выбора.
-#     """
-#     scores = []
-#     for th in grid:
-#         preds = (val_probs_series >= th).astype(int)
-#         f1 = f1_score(val_labels_series, preds, zero_division=0)
-#         scores.append((float(th), float(f1)))
-
-#     scores.sort(key=lambda x: (-x[1], x[0]))
-#     best_th, best_f1 = scores[0]
-#     top5 = scores[:5]
-
-#     plateau = sorted([th for th, f1 in scores if f1 >= best_f1 - plateau_delta])
-
-#     return {
-#         'best_threshold': best_th,
-#         'best_f1': best_f1,
-#         'top5': top5,
-#         'plateau': (plateau[0], plateau[-1]) if plateau else (best_th, best_th),
-#         'plateau_width': len(plateau),
-#     }
-
-def select_f1_threshold(labels, scores):
-    from sklearn.metrics import precision_recall_curve
+def select_f1_threshold(labels, scores, plateau_delta=0.02):
     labels = np.asarray(labels)
     scores = np.asarray(scores, dtype=float)
+
     precision, recall, thresholds = precision_recall_curve(labels, scores)
     denom = precision[:-1] + recall[:-1]
-    f1 = np.divide(2*precision[:-1]*recall[:-1], denom,
-                   out=np.zeros_like(denom), where=denom != 0)
-    return float(thresholds[np.argmax(f1)])
+    f1 = np.divide(
+        2 * precision[:-1] * recall[:-1],
+        denom,
+        out=np.zeros_like(denom),
+        where=denom != 0,
+    )
+
+    # f1 имеет ту же длину, что thresholds
+    best_idx = int(np.argmax(f1))
+    best_th = float(thresholds[best_idx])
+    best_f1 = float(f1[best_idx])
+
+    # плато: пороги, где F1 не ниже best_f1 - plateau_delta
+    plateau_mask = f1 >= (best_f1 - plateau_delta)
+    plateau_th = thresholds[plateau_mask]  # ← без [:-1]!
+    plateau = (float(plateau_th.min()), float(plateau_th.max())) if plateau_th.size else (best_th, best_th)
+
+    # топ-5 (уникальные пороги)
+    order = np.argsort(-f1)
+    top5 = []
+    seen = set()
+    for i in order:
+        th = float(thresholds[i])
+        if th in seen:
+            continue
+        seen.add(th)
+        top5.append((th, float(f1[i])))
+        if len(top5) == 5:
+            break
+
+    return {
+        'best_threshold': best_th,
+        'best_f1': best_f1,
+        'plateau': plateau,
+        'plateau_width': int(plateau_th.size),
+        'top5': top5,
+    }
 
 def select_day_threshold(val_labels, val_probs):
     precisions, recalls, thresholds = precision_recall_curve(val_labels, val_probs)
@@ -266,9 +276,7 @@ train_df = pd.read_pickle("D:/dataset/train_sequences.pkl")
 val_df = pd.read_pickle("D:/dataset/val_sequences.pkl")
 test_df = pd.read_pickle("D:/dataset/test_sequences.pkl")
 
-logger.info(train_df['full_length'].describe())
-logger.info(train_df['full_length'].describe())
-logger.info(train_df['full_length'].describe())
+logger.info(train_df['full_length_norm'].describe())
 
 with open("D:/dataset/token_to_id.pkl", 'rb') as f:
     token_to_id = pickle.load(f)
