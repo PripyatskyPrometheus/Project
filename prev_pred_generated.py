@@ -46,18 +46,14 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 def load_threshold_from_last_run():
     runs = sorted([d for d in os.listdir(RUNS_DIR) if os.path.isdir(os.path.join(RUNS_DIR, d))])
     if not runs:
-        logger.info("Нет прогонов — порог 0.5")
         return 0.5
     last = os.path.join(RUNS_DIR, runs[-1], "threshold.json")
     if not os.path.exists(last):
-        logger.info("threshold.json не найден — порог 0.5")
         return 0.5
     with open(last, 'r', encoding='utf-8') as f:
         data = json.load(f)
-    th = data.get("rules", {}).get("max", {}).get("best_threshold")
-    if th is None:
-        th = data.get("day_threshold_for_reference", 0.5)
-    logger.info(f"Порог из {runs[-1]}: {th:.4f}")
+    th = data.get("day_threshold_for_reference", 0.5)
+    logger.info(f"Day-level порог из {runs[-1]}: {th:.4f}")
     return float(th)
 
 
@@ -187,7 +183,7 @@ def select_day_threshold(val_labels, val_probs):
 
 
 def report_user_rule(name, vp, vl, tp, tl, logger):
-    info = select_f1_threshold(vp, vl); th = info['best_threshold']
+    info = select_f1_threshold(vl, vp); th = info['best_threshold']
     preds = (tp >= th).astype(int)
     t_p = precision_score(tl, preds, zero_division=0); t_r = recall_score(tl, preds, zero_division=0)
     t_f1 = f1_score(tl, preds, zero_division=0)
@@ -196,7 +192,7 @@ def report_user_rule(name, vp, vl, tp, tl, logger):
     logger.info(f"  Лучший порог (val): {th:.4f} (val F1 users = {info['best_f1']:.4f})")
     logger.info(f"  Плато: {info['plateau'][0]:.4f}–{info['plateau'][1]:.4f} (ширина {info['plateau_width']})")
     for t, f in info['top5']: logger.info(f"    {t:.4f}: {f:.4f}")
-    logger.info(f"  TEST @ {th:.4f}: F1 users = {t_f1:.4f}, P = {t_p:.4f}, R = {t_r:.4f}, caught = {caught}/{total}")
+    logger.info(f"  TEST {th:.4f}: F1 users = {t_f1:.4f}, P = {t_p:.4f}, R = {t_r:.4f}, caught = {caught}/{total}")
     return {'rule': name, 'best_threshold': float(th), 'val_f1_users': float(info['best_f1']),
             'plateau_lo': float(info['plateau'][0]), 'plateau_hi': float(info['plateau'][1]),
             'plateau_width': int(info['plateau_width']), 'test_f1_users': float(t_f1),
@@ -224,7 +220,7 @@ def main():
         if name == 'train': train_df = df2
         elif name == 'val': val_df = df2
         else: test_df = df2
-        logger.info(f"  {name}: prev_pred=1 {int(df2['prev_pred'].sum())}/{len(df2)}")
+        logger.info(f"{name}: prev_pred=1 {int(df2['prev_pred'].sum())}/{len(df2)}")
 
     logger.info("ОБУЧЕНИЕ С prev_pred")
     train_ds = InsiderDataset(train_df, PREV_EXTRA); val_ds = InsiderDataset(val_df, PREV_EXTRA); test_ds = InsiderDataset(test_df, PREV_EXTRA)

@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from sklearn.metrics import recall_score, precision_score, f1_score
 
-RUN_PATH = "D:/dataset/runs/2026-10-29_18-49-37_bilstm/predictions/"
+RUN_PATH = "D:/dataset/runs/2026-10-29_21-47-11_bilstm_prev_pred/predictions/"
 THRESHOLD = None
 
 def load_preds(run_path, name):
