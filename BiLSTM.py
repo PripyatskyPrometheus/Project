@@ -30,8 +30,7 @@ console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
-# Дополнительные признаки дня (кроме последовательности токенов) для корреляции
-# EXTRA_COLS = ['full_length_norm', 'prev_label', 'days_since_anom_norm']
+# Дополнительные признаки дня (кроме последовательности токенов)
 EXTRA_COLS = ['full_length_norm']
 N_EXTRA = len(EXTRA_COLS)
 
@@ -42,16 +41,15 @@ class InsiderDataset(Dataset):
         self.masks = torch.FloatTensor(np.stack(df['mask'].values))
         self.labels = torch.FloatTensor(df['has_anomaly'].values)
         self.extra = torch.FloatTensor(df[EXTRA_COLS].values.astype(np.float32))
-
     def __len__(self):
         return len(self.labels)
-
     def __getitem__(self, idx):
         return self.sequences[idx], self.masks[idx], self.extra[idx], self.labels[idx]
 
 
 class InsiderBiLSTM(nn.Module):
-    def __init__(self, vocab_size, token_to_id, token_weights=None, embedding_dim=64, hidden_dim=256, num_layers=2, dropout=0.4, max_len=250, n_extra=3):
+    def __init__(self, vocab_size, token_to_id, token_weights=None, embedding_dim=64, hidden_dim=128, num_layers=2, dropout=0.4,
+                 max_len=250, n_extra=1):
         super(InsiderBiLSTM, self).__init__()
 
         self.max_len = max_len
@@ -176,9 +174,12 @@ def user_level_probs(df, prob_col):
     return g[prob_col].max(), g['has_anomaly'].max()
 
 
-def select_f1_threshold(labels, scores, plateau_delta=0.02):
-    labels = np.asarray(labels)
+def select_f1_threshold(labels, scores, plateau_delta=0.01):
+    """Возвращает лучший порог, F1, диапозон, топ-5 (по уникальным порогам)."""
+    labels = np.asarray(labels).astype(int)
     scores = np.asarray(scores, dtype=float)
+    if len(np.unique(labels)) < 2:
+        return {'best_threshold': 0.5, 'best_f1': 0.0, 'plateau': (0.5, 0.5), 'plateau_width': 0, 'top5': []}
 
     precision, recall, thresholds = precision_recall_curve(labels, scores)
     denom = precision[:-1] + recall[:-1]
@@ -189,36 +190,26 @@ def select_f1_threshold(labels, scores, plateau_delta=0.02):
         where=denom != 0,
     )
 
-    # f1 имеет ту же длину, что thresholds
     best_idx = int(np.argmax(f1))
     best_th = float(thresholds[best_idx])
     best_f1 = float(f1[best_idx])
 
-    # плато: пороги, где F1 не ниже best_f1 - plateau_delta
     plateau_mask = f1 >= (best_f1 - plateau_delta)
-    plateau_th = thresholds[plateau_mask]  # ← без [:-1]!
+    plateau_th = thresholds[plateau_mask]
     plateau = (float(plateau_th.min()), float(plateau_th.max())) if plateau_th.size else (best_th, best_th)
 
-    # топ-5 (уникальные пороги)
     order = np.argsort(-f1)
-    top5 = []
-    seen = set()
+    top5, seen = [], set()
     for i in order:
-        th = float(thresholds[i])
-        if th in seen:
+        t = float(thresholds[i])
+        if t in seen:
             continue
-        seen.add(th)
-        top5.append((th, float(f1[i])))
+        seen.add(t)
+        top5.append((t, float(f1[i])))
         if len(top5) == 5:
             break
 
-    return {
-        'best_threshold': best_th,
-        'best_f1': best_f1,
-        'plateau': plateau,
-        'plateau_width': int(plateau_th.size),
-        'top5': top5,
-    }
+    return {'best_threshold': best_th, 'best_f1': best_f1, 'plateau': plateau, 'plateau_width': int(plateau_th.size), 'top5': top5,}
 
 def select_day_threshold(val_labels, val_probs):
     precisions, recalls, thresholds = precision_recall_curve(val_labels, val_probs)
@@ -226,10 +217,9 @@ def select_day_threshold(val_labels, val_probs):
     best_idx = np.argmax(f1s[:-1])
     return float(thresholds[best_idx])
 
-
 def report_user_rule(name, val_probs_series, val_labels_series, test_probs_series, test_labels_series, logger):
-    """Подбор порога на val, отчёт топ-5/плато и метрик на test."""
-    info = select_f1_threshold(val_probs_series, val_labels_series)
+    """Подбор порога на val, отчёт топ-5/диапозон и метрик на test."""
+    info = select_f1_threshold(val_labels_series, val_probs_series)
     th = info['best_threshold']
 
     preds = (test_probs_series >= th).astype(int)
@@ -240,12 +230,12 @@ def report_user_rule(name, val_probs_series, val_labels_series, test_probs_serie
     total = int(test_labels_series.sum())
 
     logger.info(f"\n[{name}]")
-    logger.info(f"  Лучший порог (val): {th:.2f} (val F1 users = {info['best_f1']:.4f})")
-    logger.info(f"  Диапозон: {info['plateau'][0]:.2f}–{info['plateau'][1]:.2f} (ширина {info['plateau_width']})")
+    logger.info(f"  Лучший порог (val): {th:.4f} (val F1 users = {info['best_f1']:.4f})")
+    logger.info(f"  Плато: {info['plateau'][0]:.4f}–{info['plateau'][1]:.4f} (ширина {info['plateau_width']})")
     logger.info(f"  Топ-5 порогов на val:")
     for t, f in info['top5']:
-        logger.info(f"    {t:.2f}: {f:.4f}")
-    logger.info(f"  TEST {th:.2f}: F1 users = {t_f1:.4f}, P = {t_p:.4f}, R = {t_r:.4f}, caught = {caught}/{total}")
+        logger.info(f"    {t:.4f}: {f:.4f}")
+    logger.info(f"  TEST @ {th:.4f}: F1 users = {t_f1:.4f}, P = {t_p:.4f}, R = {t_r:.4f}, caught = {caught}/{total}")
 
     return {
         'rule': name,
@@ -275,8 +265,6 @@ logger.info(f"PyTorch: {torch.__version__}")
 train_df = pd.read_pickle("D:/dataset/train_sequences.pkl")
 val_df = pd.read_pickle("D:/dataset/val_sequences.pkl")
 test_df = pd.read_pickle("D:/dataset/test_sequences.pkl")
-
-logger.info(train_df['full_length_norm'].describe())
 
 with open("D:/dataset/token_to_id.pkl", 'rb') as f:
     token_to_id = pickle.load(f)
@@ -435,7 +423,7 @@ logger.info(f"F1: {test_f1:.4f}")
 logger.info(f"AUROC: {test_auroc:.4f}")
 logger.info(f"AUPRC: {test_auprc:.4f}")
 
-logger.info("\nПОДБОР ПОРОГА НА VAL (user-level, тонко, шаг 0.01)")
+logger.info("\nПОДБОР ПОРОГА НА VAL (user-level, PR-кривая, полный диапазон)")
 
 val_loss, val_probs, val_labels = eval_epoch(model_eval, val_loader, criterion, device)
 
@@ -449,13 +437,13 @@ val_user_probs, val_user_labels = user_level_probs(val_df_eval, 'prob')
 test_user_probs, test_user_labels = user_level_probs(test_df_eval, 'prob')
 rule_max = report_user_rule("max(prob)", val_user_probs, val_user_labels, test_user_probs, test_user_labels, logger)
 
-# hybrid: пик + среднее за 3 дня (два α: оптимум F1 и recall-режим)
+# hybrid: пик + среднее за 3 дня (два @: оптимум F1 и recall-режим)
 val_df_eval = add_rolling(val_df_eval, window=3)
 test_df_eval = add_rolling(test_df_eval, window=3)
 
 rule_hybrid_04 = None
 rule_hybrid_05 = None
-for alpha, tag in [(0.4, 'α=0.4'), (0.5, 'α=0.5')]:
+for alpha, tag in [(0.4, '@=0.4'), (0.5, '@=0.5')]:
     v = val_df_eval.copy()
     t = test_df_eval.copy()
     v['hybrid'] = v['prob'] + alpha * v['roll3_mean']
@@ -494,14 +482,26 @@ logger.info(f"\nЛучшее правило по val F1: {best_rule_name} "
             f"(val={best_rule['val_f1_users']:.4f}, "
             f"test={best_rule['test_f1_users']:.4f})")
 
-
 np.save("D:/dataset/best_threshold.npy", np.array([best_threshold]))
-logger.info(f"best_threshold.npy (hybrid α=0.4): {best_threshold:.4f}")
+logger.info(f"best_threshold.npy (rule={best_rule_name}): {best_threshold:.4f}")
 
-logger.info("\nАНАЛИЗ ОШИБОК (hybrid α=0.4)")
+# Анализ ошибок — по лучшему правилу
+score_col_map = {
+    'max': 'prob',
+    'hybrid_04': 'hybrid_04',
+    'hybrid_05': 'hybrid_05',
+    'isotonic': 'prob_iso',
+}
+if best_rule_name == 'hybrid_04':
+    test_df_eval['hybrid_04'] = test_df_eval['prob'] + 0.4 * test_df_eval['roll3_mean']
+elif best_rule_name == 'hybrid_05':
+    test_df_eval['hybrid_05'] = test_df_eval['prob'] + 0.5 * test_df_eval['roll3_mean']
 
-test_df_eval['hybrid_04'] = test_df_eval['prob'] + 0.4 * test_df_eval['roll3_mean']
-test_df_eval['pred'] = (test_df_eval['hybrid_04'] > best_threshold).astype(int)
+score_col = score_col_map[best_rule_name]
+test_df_eval['best_score'] = test_df_eval[score_col]
+test_df_eval['pred'] = (test_df_eval['best_score'] > best_threshold).astype(int)
+
+logger.info(f"\nАНАЛИЗ ОШИБОК (rule={best_rule_name}, threshold={best_threshold:.4f})")
 
 fn = test_df_eval[(test_df_eval['has_anomaly'] == 1) & (test_df_eval['pred'] == 0)]
 fp = test_df_eval[(test_df_eval['has_anomaly'] == 0) & (test_df_eval['pred'] == 1)]
@@ -513,36 +513,37 @@ logger.info(f"Поймано аномалий: {len(tp_)}")
 
 logger.info(f"\nПримеры ПРОПУЩЕННЫХ аномалий:")
 for _, row in fn.head(5).iterrows():
-    logger.info(f"user={row['user']}, day={row['day']}, len={row['sequence_length']}, prob={row['prob']:.4f}, hybrid={row['hybrid_04']:.4f}")
+    logger.info(f"user={row['user']}, day={row['day']}, len={row['sequence_length']}, prob={row['prob']:.4f}, score={row['best_score']:.4f}")
 
 logger.info(f"\nПримеры ПОЙМАННЫХ аномалий (первые 5):")
 for _, row in tp_.head(5).iterrows():
-    logger.info(f"user={row['user']}, day={row['day']}, len={row['sequence_length']}, prob={row['prob']:.4f}, hybrid={row['hybrid_04']:.4f}")
+    logger.info(f"user={row['user']}, day={row['day']}, len={row['sequence_length']}, prob={row['prob']:.4f}, score={row['best_score']:.4f}")
 
-logger.info("\nПОЛЬЗОВАТЕЛИ С АНОМАЛИЯМИ - СТАТУС (hybrid α=0.4, порог из val)")
+logger.info(f"\nПОЛЬЗОВАТЕЛИ С АНОМАЛИЯМИ - СТАТУС (rule={best_rule_name})")
 
-user_hybrid_max = test_df_eval.groupby('user')['hybrid_04'].max()
+user_best_max = test_df_eval.groupby('user')['best_score'].max()
 user_anom_count = test_df_eval[test_df_eval['has_anomaly'] == 1].groupby('user').size()
 user_has_anom = test_df_eval.groupby('user')['has_anomaly'].max()
 
 bad_users_df = pd.DataFrame({
-    'hybrid_max': user_hybrid_max,
+    'best_score_max': user_best_max,
     'n_anomalies': user_anom_count,
     'is_bad': user_has_anom
 })
 bad_users_df = bad_users_df[bad_users_df['is_bad'] == 1].sort_values('n_anomalies', ascending=False)
 
-logger.info(f"\n{'user':>12} {'аномалий':>10} {'hybrid_max':>12} {'пойман?':>8}")
+logger.info(f"\n{'user':>12} {'аномалий':>10} {'best_score':>12} {'пойман?':>8}")
 for user, row in bad_users_df.iterrows():
-    caught = "ДА" if row['hybrid_max'] >= best_threshold else "нет"
-    logger.info(f"{user:>12} {int(row['n_anomalies']):>10} {row['hybrid_max']:>12.4f} {caught:>8}")
+    caught = "ДА" if row['best_score_max'] >= best_threshold else "нет"
+    logger.info(f"{user:>12} {int(row['n_anomalies']):>10} {row['best_score_max']:>12.4f} {caught:>8}")
 
 logger.info("\nШЕСТОЙ ЭТАП: СОХРАНЕНИЕ")
 
 results = {
-    'model': 'BiLSTM+extra',
+    'model': 'BiLSTM+full_length_norm',
     'hidden_dim': HIDDEN_DIM,
     'n_extra': N_EXTRA,
+    'best_rule': best_rule_name,
     'auroc': test_auroc,
     'auprc': test_auprc,
     'precision_at_05_days': test_p,
@@ -552,7 +553,7 @@ results = {
 }
 for r in [rule_max, rule_hybrid_04, rule_hybrid_05, rule_iso]:
     key = (r['rule'].replace(' ', '_').replace('(', '').replace(')', '').replace('*', 'x').replace('+', 'plus').replace('.', '_')
-        .replace('α', 'a').replace('=', ''))
+        .replace('@', 'a').replace('=', ''))
     results[f'{key}_threshold'] = r['best_threshold']
     results[f'{key}_val_f1'] = r['val_f1_users']
     results[f'{key}_test_f1'] = r['test_f1_users']
@@ -597,7 +598,7 @@ logger.info('Сохраняем версию прогона')
 run_dir = make_run_dir("bilstm")
 
 config = {
-    "model": "BiLSTM+extra",
+    "model": "BiLSTM+full_length_norm",
     "embedding_dim": 64,
     "hidden_dim": HIDDEN_DIM,
     "num_layers": 2,
@@ -610,12 +611,13 @@ config = {
     "max_len": MAX_LEN,
     "n_epochs": N_EPOCHS,
     "patience": PATIENCE,
-    "threshold_selection": "val_f1_users_thin_0.01",
-    "plateau_delta": 0.02,
+    "threshold_selection": "pr_curve_f1_users_full_range",
+    "plateau_delta": 0.01,
     "hybrid_alpha_main": 0.4,
     "hybrid_alpha_recall": 0.5,
     "hybrid_window": 3,
     "extra_cols": EXTRA_COLS,
+    "best_rule": best_rule_name,
     "random_seed": 42,
 }
 save_config(run_dir, config)
@@ -658,29 +660,30 @@ metrics = {
         "val_f1_users": float(rule_max['val_f1_users']),
         "test_f1_users": float(rule_max['test_f1_users']),
         "caught": rule_max['caught'],
-        "plateau": f"{rule_max['plateau_lo']:.2f}-{rule_max['plateau_hi']:.2f}",
+        "plateau": f"{rule_max['plateau_lo']:.4f}-{rule_max['plateau_hi']:.4f}",
     },
     "users_hybrid_04": {
         "best_threshold": float(rule_hybrid_04['best_threshold']),
         "val_f1_users": float(rule_hybrid_04['val_f1_users']),
         "test_f1_users": float(rule_hybrid_04['test_f1_users']),
         "caught": rule_hybrid_04['caught'],
-        "plateau": f"{rule_hybrid_04['plateau_lo']:.2f}-{rule_hybrid_04['plateau_hi']:.2f}",
+        "plateau": f"{rule_hybrid_04['plateau_lo']:.4f}-{rule_hybrid_04['plateau_hi']:.4f}",
     },
     "users_hybrid_05": {
         "best_threshold": float(rule_hybrid_05['best_threshold']),
         "val_f1_users": float(rule_hybrid_05['val_f1_users']),
         "test_f1_users": float(rule_hybrid_05['test_f1_users']),
         "caught": rule_hybrid_05['caught'],
-        "plateau": f"{rule_hybrid_05['plateau_lo']:.2f}-{rule_hybrid_05['plateau_hi']:.2f}",
+        "plateau": f"{rule_hybrid_05['plateau_lo']:.4f}-{rule_hybrid_05['plateau_hi']:.4f}",
     },
     "users_isotonic": {
         "best_threshold": float(rule_iso['best_threshold']),
         "val_f1_users": float(rule_iso['val_f1_users']),
         "test_f1_users": float(rule_iso['test_f1_users']),
         "caught": rule_iso['caught'],
-        "plateau": f"{rule_iso['plateau_lo']:.2f}-{rule_iso['plateau_hi']:.2f}",
+        "plateau": f"{rule_iso['plateau_lo']:.4f}-{rule_iso['plateau_hi']:.4f}",
     },
+    "best_rule": best_rule_name,
     "best_epoch": best_epoch,
     "best_val_auprc": float(best_val_auprc),
     "training_time_min": float(total_time / 60),
@@ -688,14 +691,15 @@ metrics = {
 save_metrics(run_dir, metrics)
 
 threshold_info = {
-    "selection_metric": "val_f1_users_thin_0.01",
+    "selection_metric": "pr_curve_f1_users_full_range",
     "day_threshold_for_reference": float(day_threshold),
+    "best_rule": best_rule_name,
     "rules": {
         "max": {
             "best_threshold": float(rule_max['best_threshold']),
             "val_f1_users": float(rule_max['val_f1_users']),
             "test_f1_users": float(rule_max['test_f1_users']),
-            "plateau": f"{rule_max['plateau_lo']:.2f}-{rule_max['plateau_hi']:.2f}",
+            "plateau": f"{rule_max['plateau_lo']:.4f}-{rule_max['plateau_hi']:.4f}",
             "top5_val": rule_max['top5'],
         },
         "hybrid_04": {
@@ -704,7 +708,7 @@ threshold_info = {
             "best_threshold": float(rule_hybrid_04['best_threshold']),
             "val_f1_users": float(rule_hybrid_04['val_f1_users']),
             "test_f1_users": float(rule_hybrid_04['test_f1_users']),
-            "plateau": f"{rule_hybrid_04['plateau_lo']:.2f}-{rule_hybrid_04['plateau_hi']:.2f}",
+            "plateau": f"{rule_hybrid_04['plateau_lo']:.4f}-{rule_hybrid_04['plateau_hi']:.4f}",
             "top5_val": rule_hybrid_04['top5'],
         },
         "hybrid_05": {
@@ -713,14 +717,14 @@ threshold_info = {
             "best_threshold": float(rule_hybrid_05['best_threshold']),
             "val_f1_users": float(rule_hybrid_05['val_f1_users']),
             "test_f1_users": float(rule_hybrid_05['test_f1_users']),
-            "plateau": f"{rule_hybrid_05['plateau_lo']:.2f}-{rule_hybrid_05['plateau_hi']:.2f}",
+            "plateau": f"{rule_hybrid_05['plateau_lo']:.4f}-{rule_hybrid_05['plateau_hi']:.4f}",
             "top5_val": rule_hybrid_05['top5'],
         },
         "isotonic": {
             "best_threshold": float(rule_iso['best_threshold']),
             "val_f1_users": float(rule_iso['val_f1_users']),
             "test_f1_users": float(rule_iso['test_f1_users']),
-            "plateau": f"{rule_iso['plateau_lo']:.2f}-{rule_iso['plateau_hi']:.2f}",
+            "plateau": f"{rule_iso['plateau_lo']:.4f}-{rule_iso['plateau_hi']:.4f}",
             "top5_val": rule_iso['top5'],
         },
     },
