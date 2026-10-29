@@ -31,7 +31,8 @@ console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
 # Дополнительные признаки дня (кроме последовательности токенов) для корреляции
-EXTRA_COLS = ['full_length_norm', 'prev_label', 'days_since_anom_norm']
+# EXTRA_COLS = ['full_length_norm', 'prev_label', 'days_since_anom_norm']
+EXTRA_COLS = ['full_length']
 N_EXTRA = len(EXTRA_COLS)
 
 
@@ -175,31 +176,39 @@ def user_level_probs(df, prob_col):
     return g[prob_col].max(), g['has_anomaly'].max()
 
 
-def select_user_threshold(val_probs_series, val_labels_series,
-                          grid=np.arange(0.05, 0.96, 0.01), plateau_delta=0.02):
-    """Подбор порога по F1 пользователей на val. Находит лучший порог, топ-5 и диапазон порогов,
-        где F1 в пределах plateau_delta от лучшего выбора.
-    """
-    scores = []
-    for th in grid:
-        preds = (val_probs_series >= th).astype(int)
-        f1 = f1_score(val_labels_series, preds, zero_division=0)
-        scores.append((float(th), float(f1)))
+# def select_user_threshold(val_probs_series, val_labels_series, grid=np.arange(0.05, 0.96, 0.01), plateau_delta=0.02):
+#     """Подбор порога по F1 пользователей на val. Находит лучший порог, топ-5 и диапазон порогов,
+#         где F1 в пределах plateau_delta от лучшего выбора.
+#     """
+#     scores = []
+#     for th in grid:
+#         preds = (val_probs_series >= th).astype(int)
+#         f1 = f1_score(val_labels_series, preds, zero_division=0)
+#         scores.append((float(th), float(f1)))
 
-    scores.sort(key=lambda x: (-x[1], x[0]))
-    best_th, best_f1 = scores[0]
-    top5 = scores[:5]
+#     scores.sort(key=lambda x: (-x[1], x[0]))
+#     best_th, best_f1 = scores[0]
+#     top5 = scores[:5]
 
-    plateau = sorted([th for th, f1 in scores if f1 >= best_f1 - plateau_delta])
+#     plateau = sorted([th for th, f1 in scores if f1 >= best_f1 - plateau_delta])
 
-    return {
-        'best_threshold': best_th,
-        'best_f1': best_f1,
-        'top5': top5,
-        'plateau': (plateau[0], plateau[-1]) if plateau else (best_th, best_th),
-        'plateau_width': len(plateau),
-    }
+#     return {
+#         'best_threshold': best_th,
+#         'best_f1': best_f1,
+#         'top5': top5,
+#         'plateau': (plateau[0], plateau[-1]) if plateau else (best_th, best_th),
+#         'plateau_width': len(plateau),
+#     }
 
+def select_f1_threshold(labels, scores):
+    from sklearn.metrics import precision_recall_curve
+    labels = np.asarray(labels)
+    scores = np.asarray(scores, dtype=float)
+    precision, recall, thresholds = precision_recall_curve(labels, scores)
+    denom = precision[:-1] + recall[:-1]
+    f1 = np.divide(2*precision[:-1]*recall[:-1], denom,
+                   out=np.zeros_like(denom), where=denom != 0)
+    return float(thresholds[np.argmax(f1)])
 
 def select_day_threshold(val_labels, val_probs):
     precisions, recalls, thresholds = precision_recall_curve(val_labels, val_probs)
@@ -210,7 +219,7 @@ def select_day_threshold(val_labels, val_probs):
 
 def report_user_rule(name, val_probs_series, val_labels_series, test_probs_series, test_labels_series, logger):
     """Подбор порога на val, отчёт топ-5/плато и метрик на test."""
-    info = select_user_threshold(val_probs_series, val_labels_series)
+    info = select_f1_threshold(val_probs_series, val_labels_series)
     th = info['best_threshold']
 
     preds = (test_probs_series >= th).astype(int)
@@ -256,6 +265,10 @@ logger.info(f"PyTorch: {torch.__version__}")
 train_df = pd.read_pickle("D:/dataset/train_sequences.pkl")
 val_df = pd.read_pickle("D:/dataset/val_sequences.pkl")
 test_df = pd.read_pickle("D:/dataset/test_sequences.pkl")
+
+logger.info(train_df['full_length'].describe())
+logger.info(train_df['full_length'].describe())
+logger.info(train_df['full_length'].describe())
 
 with open("D:/dataset/token_to_id.pkl", 'rb') as f:
     token_to_id = pickle.load(f)
@@ -423,12 +436,12 @@ val_df_eval['prob'] = val_probs
 test_df_eval = test_df.copy()
 test_df_eval['prob'] = test_probs
 
-# 1) max(prob)
+# max(prob)
 val_user_probs, val_user_labels = user_level_probs(val_df_eval, 'prob')
 test_user_probs, test_user_labels = user_level_probs(test_df_eval, 'prob')
 rule_max = report_user_rule("max(prob)", val_user_probs, val_user_labels, test_user_probs, test_user_labels, logger)
 
-# 2) hybrid: пик + среднее за 3 дня (два α: оптимум F1 и recall-режим)
+# hybrid: пик + среднее за 3 дня (два α: оптимум F1 и recall-режим)
 val_df_eval = add_rolling(val_df_eval, window=3)
 test_df_eval = add_rolling(test_df_eval, window=3)
 
@@ -459,7 +472,21 @@ rule_iso = report_user_rule("isotonic(prob)", vp, vl, tp, tl, logger)
 day_threshold = select_day_threshold(val_labels, val_probs)
 logger.info(f"\nDay-level порог (для справки): {day_threshold:.4f}")
 
-best_threshold = rule_hybrid_04['best_threshold']
+rules = {
+    'max':       rule_max,
+    'hybrid_04': rule_hybrid_04,
+    'hybrid_05': rule_hybrid_05,
+    'isotonic':  rule_iso,
+}
+best_rule_name = max(rules, key=lambda k: rules[k]['val_f1_users'])
+best_rule = rules[best_rule_name]
+best_threshold = best_rule['best_threshold']
+
+logger.info(f"\nЛучшее правило по val F1: {best_rule_name} "
+            f"(val={best_rule['val_f1_users']:.4f}, "
+            f"test={best_rule['test_f1_users']:.4f})")
+
+
 np.save("D:/dataset/best_threshold.npy", np.array([best_threshold]))
 logger.info(f"best_threshold.npy (hybrid α=0.4): {best_threshold:.4f}")
 

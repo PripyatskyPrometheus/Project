@@ -176,31 +176,33 @@ print("\n7. Сохранение данных")
 
 def add_lag_features(df):
     df = df.sort_values(['user', 'day']).copy()
-    # full_length добавляем в pkl 
     if 'full_length' not in df.columns:
-        df['full_length'] = df['sequence_length']  # fallback, если нет
-    df['full_length_norm'] = df['full_length'] / df['full_length'].max()
+        df['full_length'] = df['sequence_length']
+    # df['full_length_norm'] = df['full_length'] / df['full_length'].max()
 
-    # лаги по известным меткам прошлых дней (без утечки будущего)
-    df['prev_label'] = df.groupby('user')['has_anomaly'].shift(1).fillna(0)
+    # # лаги по известным меткам прошлых дней (без утечки будущего)
+    # df['prev_label'] = df.groupby('user')['has_anomaly'].shift(1).fillna(0)
 
-    df['days_since_anom'] = (
-        df.groupby('user')['has_anomaly']
-          .transform(lambda s: s.shift(1).eq(0).cumsum())
-          .fillna(0)
-    )
-    # нормируем days_since_anom без разброса
-    df['days_since_anom_norm'] = df['days_since_anom'] / 30.0
+    # df['days_since_anom'] = (
+    #     df.groupby('user')['has_anomaly']
+    #       .transform(lambda s: s.shift(1).eq(0).cumsum())
+    #       .fillna(0)
+    # )
+    # # нормируем days_since_anom без разброса
+    # df['days_since_anom_norm'] = df['days_since_anom'] / 30.0
     return df
 
 train_df = add_lag_features(train_df)
 val_df = add_lag_features(val_df)
 test_df = add_lag_features(test_df)
 
-for name, d in [('train', train_df), ('val', val_df), ('test', test_df)]:
-    print(f"{name}: full_length max={d['full_length'].max():.0f}, "
-          f"prev_label sum={d['prev_label'].sum():.0f}, "
-          f"days_since_anom max={d['days_since_anom'].max():.0f}")
+# for name, d in [('train', train_df), ('val', val_df), ('test', test_df)]:
+#     print(f"{name}: full_length max={d['full_length'].max():.0f}, "
+#           f"prev_label sum={d['prev_label'].sum():.0f}, "
+#           f"days_since_anom max={d['days_since_anom'].max():.0f}")
+max_len = float(train_df['full_length'].max())
+for d in [train_df, val_df, test_df]:
+    d['full_length_norm'] = d['full_length'] / max_len
 
 with open("D:/dataset/token_to_id.pkl", 'wb') as f:
     pickle.dump(token_to_id, f)

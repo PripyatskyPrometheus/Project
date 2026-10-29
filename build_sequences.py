@@ -157,14 +157,16 @@ all_actions = pd.concat([
 print(f"После email_attach и email_night: {len(all_actions)}")
 print(f"Положительных: {all_actions['is_true_bad'].sum()}")
 
-# logon/logoff как действия (разметка CERT на них не вешается)
-logon_actions = logon[['user', 'day', 'parsed_date']].copy()
-logon_actions['action'] = 'logon'
-logon_actions['is_true_bad'] = 0
+# logon/logoff как действия
+logon_all = logon[['user', 'day', 'parsed_date', 'activity', 'is_true_bad']].copy()
+activity = logon_all['activity'].str.strip().str.lower()
 
-logoff_actions = logon[logon['activity'].str.contains('Logoff', na=False)][['user', 'day', 'parsed_date']].copy()
-logoff_actions['action'] = 'logoff'
-logoff_actions['is_true_bad'] = 0
+if not activity.isin(['logon', 'logoff']).all():
+    raise ValueError('Неизвестная активность аутентификации')
+
+logon_all['action'] = activity
+logon_actions = logon_all[logon_all['action'] == 'logon']
+logoff_actions = logon_all[logon_all['action'] == 'logoff']
 
 all_actions = pd.concat([
     all_actions,
