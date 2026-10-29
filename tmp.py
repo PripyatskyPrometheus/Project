@@ -3,8 +3,8 @@ import pandas as pd
 import numpy as np
 from sklearn.metrics import recall_score, precision_score, f1_score
 
-RUN_PATH = "D:/dataset/runs/2026-10-29_15-04-49_bilstm/predictions/"
-THRESHOLD = None  # если None, подберём на val по user-level F1
+RUN_PATH = "D:/dataset/runs/2026-10-29_18-49-37_bilstm/predictions/"
+THRESHOLD = None
 
 def load_preds(run_path, name):
     df = pd.read_parquet(run_path + name + ".parquet")
@@ -58,13 +58,13 @@ def main():
         THRESHOLD = best_th
         print(f"Порог по val (user-level F1): {THRESHOLD:.2f} (val F1={best_f1:.4f})")
 
-    print("\n=== TEST: первый vs последующие аномальные дни ===")
+    print("\nTEST: первый vs последующие аномальные дни")
     r1 = report_group(test_df, 'is_first', THRESHOLD, 'first_anomalous_day')
     r2 = report_group(test_df, 'is_subsequent', THRESHOLD, 'subsequent_days')
     test_df['is_anomaly'] = (test_df['has_anomaly'] == 1).astype(bool)
     r_all = report_group(test_df, 'is_anomaly', THRESHOLD, 'all_anomalous_days')
 
-    print("\n=== TEST: уровень аккаунта (max prob) ===")
+    print("\nTEST: уровень аккаунта (max prob)")
     tg = test_df.groupby('user')
     t_probs = tg['prob'].max()
     t_labels = tg['has_anomaly'].max().astype(int)

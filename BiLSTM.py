@@ -468,12 +468,7 @@ rule_iso = report_user_rule("isotonic(prob)", vp, vl, tp, tl, logger)
 day_threshold = select_day_threshold(val_labels, val_probs)
 logger.info(f"\nDay-level порог (для справки): {day_threshold:.4f}")
 
-rules = {
-    'max':       rule_max,
-    'hybrid_04': rule_hybrid_04,
-    'hybrid_05': rule_hybrid_05,
-    'isotonic':  rule_iso,
-}
+rules = {'max': rule_max, 'hybrid_04': rule_hybrid_04, 'hybrid_05': rule_hybrid_05, 'isotonic': rule_iso}
 best_rule_name = max(rules, key=lambda k: rules[k]['val_f1_users'])
 best_rule = rules[best_rule_name]
 best_threshold = best_rule['best_threshold']
