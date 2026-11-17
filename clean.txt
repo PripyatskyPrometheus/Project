@@ -1,0 +1,244 @@
+ПЕРВЫЙ ЭТАП: ПРОВЕРКА УСТРОЙСТВА И ЗАГРУЗКА ДАННЫХ
+Используется устройство: cuda
+GPU: Tesla T4
+PyTorch: 2.11.0+cu130
+
+Train: 183405 (user, day) (531 аномалий)
+Val: 46313 (user, day) (194 аномалий)
+Test: 100734 (user, day) (261 аномалий)
+Размер словаря: 21
+pos_weight: 344.4 -> sqrt(pos_weight): 18.6
+Доп. признаки (7): ['full_length_norm', 'files_dev', 'http_ratio', 'off_hours_dev', 'email_ext_dev', 'file_sensitive_dev', 'distinct_pcs_dev']
+  full_length_norm: mean=0.276, std=0.178
+  files_dev: mean=-0.017, std=0.604
+  http_ratio: mean=0.693, std=0.033
+  off_hours_dev: mean=0.000, std=0.005
+  email_ext_dev: mean=0.001, std=0.297
+  file_sensitive_dev: mean=-0.017, std=0.578
+  distinct_pcs_dev: mean=-0.000, std=0.275
+
+ВТОРОЙ ЭТАП: СОЗДАНИЕ DATASET И DATALOADER
+
+Train-батчи: 1433
+Val-батчи: 362
+Test-батчи: 787
+
+Пример батча:
+Sequence shape: torch.Size([128, 250])
+Mask shape: torch.Size([128, 250])
+Extra shape: torch.Size([128, 7])
+Label shape: torch.Size([128])
+
+ТРЕТИЙ ЭТАП: СОЗДАНИЕ МОДЕЛИ BiLSTM
+Модель на устройстве: cuda:0
+
+Всего параметров: 595786
+Обучаемых параметров: 595786
+hidden_dim=128, n_extra=7
+
+Архитектура модели:
+InsiderBiLSTM(
+  (embedding): Embedding(21, 64, padding_idx=19)
+  (bilstm): LSTM(64, 128, num_layers=2, batch_first=True, dropout=0.4, bidirectional=True)
+  (dropout): Dropout(p=0.4, inplace=False)
+  (attn): Linear(in_features=256, out_features=1, bias=True)
+  (fc): Linear(in_features=264, out_features=1, bias=True)
+)
+
+pos_weight=18.6
+
+ЧЕТВЕРТЫЙ ЭТАП: ОБУЧЕНИЕ
+
+Epoch  1/20
+Train Loss: 0.1424
+Val Loss: 0.2100
+Val F1: 0.0775
+Val AUPRC: 0.0899
+Время: 103.8 секунд
+Максимальная загрузка памяти GPU: 0.37 GB
+Новая лучшая модель (AUPRC=0.0899)
+
+Epoch  2/20
+Train Loss: 0.1084
+Val Loss: 0.1786
+Val F1: 0.1150
+Val AUPRC: 0.0848
+Время: 103.7 секунд
+Максимальная загрузка памяти GPU: 0.37 GB
+
+Epoch  3/20
+Train Loss: 0.1007
+Val Loss: 0.1784
+Val F1: 0.1256
+Val AUPRC: 0.1079
+Время: 104.2 секунд
+Максимальная загрузка памяти GPU: 0.39 GB
+Новая лучшая модель (AUPRC=0.1079)
+
+Epoch  4/20
+Train Loss: 0.1000
+Val Loss: 0.1898
+Val F1: 0.1137
+Val AUPRC: 0.0931
+Время: 103.9 секунд
+Максимальная загрузка памяти GPU: 0.39 GB
+
+Epoch  5/20
+Train Loss: 0.0944
+Val Loss: 0.1929
+Val F1: 0.1239
+Val AUPRC: 0.0988
+Время: 103.4 секунд
+Максимальная загрузка памяти GPU: 0.39 GB
+
+Epoch  6/20
+Train Loss: 0.0934
+Val Loss: 0.1802
+Val F1: 0.1142
+Val AUPRC: 0.1040
+Время: 103.1 секунд
+Максимальная загрузка памяти GPU: 0.39 GB
+
+Epoch  7/20
+Train Loss: 0.0926
+Val Loss: 0.1856
+Val F1: 0.1106
+Val AUPRC: 0.0946
+Время: 103.0 секунд
+Максимальная загрузка памяти GPU: 0.39 GB
+
+Epoch  8/20
+Train Loss: 0.0914
+Val Loss: 0.1901
+Val F1: 0.1192
+Val AUPRC: 0.0953
+Время: 102.1 секунд
+Максимальная загрузка памяти GPU: 0.39 GB
+
+Early stopping на эпохе 8
+
+Общее время обучения: 13.8 минут
+Лучшая эпоха: 3 (Val AUPRC: 0.1079)
+
+ПЯТЫЙ ЭТАП: ОЦЕНКА
+
+РЕЗУЛЬТАТЫ НА ТЕСТЕ (порог 0.5, дни):
+Precision: 0.0811
+Recall: 0.5517
+F1: 0.1415
+AUROC: 0.9639
+AUPRC: 0.2150
+
+ПОДБОР ПОРОГА НА VAL (user-level, PR-кривая, полный диапазон)
+
+[max(prob)]
+  Лучший порог (val): 0.9184 (val F1 users = 0.6364)
+  Плато: 0.9184–0.9184 (ширина 1)
+  Топ-5 порогов на val:
+    0.9184: 0.6364
+    0.9157: 0.6087
+    0.9546: 0.5882
+    0.9123: 0.5833
+    0.9232: 0.5714
+  TEST @ 0.9184: F1 users = 0.5926, P = 0.5000, R = 0.7273, caught = 16/22
+
+[hybrid @=0.4 (max + 0.4*roll3_mean)]
+  Лучший порог (val): 1.1302 (val F1 users = 0.6000)
+  Плато: 1.1302–1.1302 (ширина 1)
+  Топ-5 порогов на val:
+    1.1302: 0.6000
+    1.0723: 0.5714
+    1.1123: 0.5714
+    0.9961: 0.5625
+    1.0985: 0.5600
+  TEST @ 1.1302: F1 users = 0.6383, P = 0.6000, R = 0.6818, caught = 15/22
+
+[hybrid @=0.5 (max + 0.5*roll3_mean)]
+  Лучший порог (val): 1.1574 (val F1 users = 0.6087)
+  Плато: 1.1574–1.1574 (ширина 1)
+  Топ-5 порогов на val:
+    1.1574: 0.6087
+    1.1551: 0.5833
+    1.1108: 0.5714
+    1.1635: 0.5714
+    1.0368: 0.5625
+  TEST @ 1.1574: F1 users = 0.6250, P = 0.5769, R = 0.6818, caught = 15/22
+
+[isotonic(prob)]
+  Лучший порог (val): 0.1087 (val F1 users = 0.6364)
+  Плато: 0.1087–0.1087 (ширина 1)
+  Топ-5 порогов на val:
+    0.1087: 0.6364
+    0.4000: 0.5882
+    0.5000: 0.5333
+    0.0792: 0.5000
+    1.0000: 0.4615
+  TEST @ 0.1087: F1 users = 0.5926, P = 0.5000, R = 0.7273, caught = 16/22
+
+Day-level порог (для справки): 0.7884
+
+Лучшее правило по val F1: max (val=0.6364, test=0.5926)
+best_threshold.npy (rule=max): 0.9184
+
+АНАЛИЗ ОШИБОК (rule=max, threshold=0.9184)
+
+Пропущено аномалий: 209 из 261
+Ложных тревог: 109
+Поймано аномалий: 52
+
+Примеры ПРОПУЩЕННЫХ аномалий:
+user=AAF0535, day=2010-06-28, len=50, prob=0.6839, score=0.6839
+user=AAF0535, day=2010-06-29, len=51, prob=0.3056, score=0.3056
+user=AAF0535, day=2010-06-30, len=52, prob=0.7111, score=0.7111
+user=AAF0535, day=2010-07-01, len=51, prob=0.5123, score=0.5123
+user=AAF0535, day=2010-07-02, len=50, prob=0.7698, score=0.7698
+
+Примеры ПОЙМАННЫХ аномалий (первые 5):
+user=AAF0535, day=2010-07-07, len=48, prob=0.9186, score=0.9186
+user=BTL0226, day=2010-10-06, len=123, prob=0.9980, score=0.9980
+user=BTL0226, day=2010-10-12, len=117, prob=0.9966, score=0.9966
+user=BTL0226, day=2010-10-14, len=125, prob=0.9963, score=0.9963
+user=EHB0824, day=2010-07-22, len=17, prob=0.9941, score=0.9941
+
+ПОЛЬЗОВАТЕЛИ С АНОМАЛИЯМИ - СТАТУС (rule=max)
+
+        user   аномалий   best_score  пойман?
+     HXL0968         32       0.9674       ДА
+     AKR0057         28       0.5374      нет
+     KRL0501         28       0.9249       ДА
+     IJM0776         28       0.9589       ДА
+     HBO0413         28       0.9831       ДА
+     AAF0535         27       0.9186       ДА
+     RAR0725         27       0.9679       ДА
+     DIB0285         27       0.8588      нет
+     EHB0824          5       0.9975       ДА
+     MYD0978          4       0.9974       ДА
+     LJR0523          4       0.9979       ДА
+     MAR0955          3       0.9975       ДА
+     BTL0226          3       0.9980       ДА
+     BBS0039          2       0.1718      нет
+     CCA0046          2       0.9757       ДА
+     BSS0369          2       0.4496      нет
+     CSC0217          2       0.2230      нет
+     FTM0406          2       0.9969       ДА
+     JLM0364          2       0.6989      нет
+     MAS0025          2       0.9961       ДА
+     MPM0220          2       0.9283       ДА
+     PPF0435          1       0.9969       ДА
+
+ШЕСТОЙ ЭТАП: СОХРАНЕНИЕ
+Результаты сохранены: /kaggle/working/project/bilstm_results.csv
+Графики сохранены: /kaggle/working/project/bilstm_training.png
+
+Сохраняем версию прогона
+Папка прогона: D:/dataset/runs/2026-11-16_13-38-19_bilstm
+Сохранён: D:/dataset/runs/2026-11-16_13-38-19_bilstm/config.json
+Сохранён: D:/dataset/runs/2026-11-16_13-38-19_bilstm/versions.txt
+Сохранён: D:/dataset/runs/2026-11-16_13-38-19_bilstm/split.json
+Сохранён: D:/dataset/runs/2026-11-16_13-38-19_bilstm/predictions/val_probs.parquet
+Сохранён: D:/dataset/runs/2026-11-16_13-38-19_bilstm/predictions/test_probs.parquet
+Сохранён: D:/dataset/runs/2026-11-16_13-38-19_bilstm/metrics.json
+Сохранён: D:/dataset/runs/2026-11-16_13-38-19_bilstm/threshold.json
+Сохранён: D:/dataset/runs/2026-11-16_13-38-19_bilstm/bilstm_best.pt
+Сохранён: D:/dataset/runs/2026-11-16_13-38-19_bilstm/bilstm.log
+Сохранён: D:/dataset/runs/2026-11-16_13-38-19_bilstm/plots/bilstm_training.png
