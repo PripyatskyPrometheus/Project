@@ -5,8 +5,11 @@ import time
 import os
 import re
 
-data_path = "D:/dataset/labels/"
-output_path = "D:/dataset/"
+# data_path = "D:/dataset/labels/"
+# output_path = "D:/dataset/"
+
+data_path = "C:/Users/user/dataset/labels/"
+output_path = "C:/Users/user/dataset/"
 
 MAX_LEN = 250
 

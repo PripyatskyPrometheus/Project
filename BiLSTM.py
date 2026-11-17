@@ -14,8 +14,9 @@ import matplotlib.pyplot as plt
 import logging
 import sys
 from save_run import *
-
-log_file = "D:/dataset/log/bilstm.log"
+# C:/Users/user/
+# log_file = "D:/dataset/log/bilstm.log"
+log_file = "C:/Users/user/dataset/log/bilstm.log"
 
 logger = logging.getLogger('BiLSTM')
 logger.setLevel(logging.INFO)
@@ -30,10 +31,9 @@ console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
-# Дополнительные признаки дня (кроме последовательности токенов)
-EXTRA_COLS = ['full_length_norm']
+# Дополнительные признаки дня
+EXTRA_COLS = ['full_length_norm', 'files_dev', 'http_ratio', 'off_hours_dev', 'email_ext_dev', 'file_sensitive_dev', 'distinct_pcs_dev']
 N_EXTRA = len(EXTRA_COLS)
-
 
 class InsiderDataset(Dataset):
     def __init__(self, df):
@@ -98,7 +98,6 @@ class InsiderBiLSTM(nn.Module):
         out = self.fc(combined)
         return out.squeeze(-1)
 
-
 def train_epoch(model, loader, criterion, optimizer, device):
     model.train()
     total_loss = 0
@@ -121,7 +120,6 @@ def train_epoch(model, loader, criterion, optimizer, device):
         n_batches += 1
 
     return total_loss / n_batches
-
 
 def eval_epoch(model, loader, criterion, device):
     model.eval()
@@ -150,14 +148,12 @@ def eval_epoch(model, loader, criterion, device):
     avg_loss = total_loss / n_batches
     return avg_loss, np.array(all_probs), np.array(all_labels)
 
-
 def calculate_metrics(labels, probs, threshold=0.5):
     preds = (probs >= threshold).astype(int)
     p, r, f1, _ = precision_recall_fscore_support(labels, preds, average='binary', zero_division=0)
     auroc = roc_auc_score(labels, probs)
     auprc = average_precision_score(labels, probs)
     return p, r, f1, auroc, auprc
-
 
 def add_rolling(df, window=3):
     """Скользящее среднее вероятности по дням внутри пользователя (дни по возрастанию)."""
@@ -168,11 +164,9 @@ def add_rolling(df, window=3):
     )
     return df
 
-
 def user_level_probs(df, prob_col):
     g = df.groupby('user')
     return g[prob_col].max(), g['has_anomaly'].max()
-
 
 def select_f1_threshold(labels, scores, plateau_delta=0.01):
     """Возвращает лучший порог, F1, диапозон, топ-5 (по уникальным порогам)."""
@@ -235,7 +229,7 @@ def report_user_rule(name, val_probs_series, val_labels_series, test_probs_serie
     logger.info(f"  Топ-5 порогов на val:")
     for t, f in info['top5']:
         logger.info(f"    {t:.4f}: {f:.4f}")
-    logger.info(f"  TEST @ {th:.4f}: F1 users = {t_f1:.4f}, P = {t_p:.4f}, R = {t_r:.4f}, caught = {caught}/{total}")
+    logger.info(f"  TEST {th:.4f}: F1 users = {t_f1:.4f}, P = {t_p:.4f}, R = {t_r:.4f}, caught = {caught}/{total}")
 
     return {
         'rule': name,
@@ -262,15 +256,25 @@ if torch.cuda.is_available():
 torch.backends.cudnn.benchmark = True
 logger.info(f"PyTorch: {torch.__version__}")
 
-train_df = pd.read_pickle("D:/dataset/train_sequences.pkl")
-val_df = pd.read_pickle("D:/dataset/val_sequences.pkl")
-test_df = pd.read_pickle("D:/dataset/test_sequences.pkl")
+# train_df = pd.read_pickle("D:/dataset/train_sequences.pkl")
+# val_df = pd.read_pickle("D:/dataset/val_sequences.pkl")
+# test_df = pd.read_pickle("D:/dataset/test_sequences.pkl")
 
-with open("D:/dataset/token_to_id.pkl", 'rb') as f:
+train_df = pd.read_pickle("C:/Users/user/dataset/train_sequences.pkl")
+val_df = pd.read_pickle("C:/Users/user/dataset/val_sequences.pkl")
+test_df = pd.read_pickle("C:/Users/user/dataset/test_sequences.pkl")
+
+# with open("D:/dataset/token_to_id.pkl", 'rb') as f:
+#     token_to_id = pickle.load(f)
+
+# token_weights = np.load("D:/dataset/token_weights.npy")
+# pos_weight = np.load("D:/dataset/pos_weight.npy")[0]
+
+with open("C:/Users/user/dataset/token_to_id.pkl", 'rb') as f:
     token_to_id = pickle.load(f)
 
-token_weights = np.load("D:/dataset/token_weights.npy")
-pos_weight = np.load("D:/dataset/pos_weight.npy")[0]
+token_weights = np.load("C:/Users/user/dataset/token_weights.npy")
+pos_weight = np.load("C:/Users/user/dataset/pos_weight.npy")[0]
 pos_weight_sqrt = np.sqrt(pos_weight)
 
 logger.info(f"\nTrain: {len(train_df)} (user, day) ({train_df['has_anomaly'].sum()} аномалий)")
@@ -323,7 +327,7 @@ model = InsiderBiLSTM(
 ).to(device)
 
 logger.info(f"Модель на устройстве: {next(model.parameters()).device}")
-logger.info(f"Всего памяти GPU: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+# logger.info(f"Всего памяти GPU: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
 
 total_params = sum(p.numel() for p in model.parameters())
 trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -384,7 +388,8 @@ for epoch in range(N_EPOCHS):
         best_val_auprc = val_auprc
         best_epoch = epoch + 1
         patience_counter = 0
-        torch.save(model.state_dict(), "D:/dataset/bilstm_best.pt")
+        # torch.save(model.state_dict(), "D:/dataset/bilstm_best.pt")
+        torch.save(model.state_dict(), "C:/Users/user/dataset/bilstm_best.pt")
         logger.info(f"Новая лучшая модель (AUPRC={val_auprc:.4f})")
     else:
         patience_counter += 1
@@ -410,7 +415,8 @@ model_eval = InsiderBiLSTM(
     n_extra=N_EXTRA,
 ).to(device)
 
-model_eval.load_state_dict(torch.load("D:/dataset/bilstm_best.pt"))
+# model_eval.load_state_dict(torch.load("D:/dataset/bilstm_best.pt"))
+model_eval.load_state_dict(torch.load("C:/Users/user/dataset/bilstm_best.pt"))
 model_eval.eval()
 
 test_loss, test_probs, test_labels = eval_epoch(model_eval, test_loader, criterion, device)
@@ -477,7 +483,8 @@ logger.info(f"\nЛучшее правило по val F1: {best_rule_name} "
             f"(val={best_rule['val_f1_users']:.4f}, "
             f"test={best_rule['test_f1_users']:.4f})")
 
-np.save("D:/dataset/best_threshold.npy", np.array([best_threshold]))
+# np.save("D:/dataset/best_threshold.npy", np.array([best_threshold]))
+np.save("C:/Users/user/dataset/best_threshold.npy", np.array([best_threshold]))
 logger.info(f"best_threshold.npy (rule={best_rule_name}): {best_threshold:.4f}")
 
 # Анализ ошибок — по лучшему правилу
@@ -553,8 +560,10 @@ for r in [rule_max, rule_hybrid_04, rule_hybrid_05, rule_iso]:
     results[f'{key}_val_f1'] = r['val_f1_users']
     results[f'{key}_test_f1'] = r['test_f1_users']
     results[f'{key}_caught'] = r['caught']
-pd.DataFrame([results]).to_csv("D:/dataset/bilstm_results.csv", index=False)
-logger.info(f"Результаты сохранены: D:/dataset/bilstm_results.csv")
+# pd.DataFrame([results]).to_csv("D:/dataset/bilstm_results.csv", index=False)
+# logger.info(f"Результаты сохранены: D:/dataset/bilstm_results.csv")
+pd.DataFrame([results]).to_csv("C:/Users/user/dataset/bilstm_results.csv", index=False)
+logger.info(f"Результаты сохранены: C:/Users/user/dataset/bilstm_results.csv")
 
 fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
@@ -584,16 +593,18 @@ axes[2].legend()
 axes[2].grid(True)
 
 plt.tight_layout()
-plt.savefig("D:/dataset/bilstm_training.png", dpi=150)
+# plt.savefig("D:/dataset/bilstm_training.png", dpi=150)
+plt.savefig("C:/Users/user/dataset/bilstm_training.png", dpi=150)
 plt.close()
-logger.info("Графики сохранены: D:/dataset/bilstm_training.png")
+# logger.info("Графики сохранены: D:/dataset/bilstm_training.png")
+logger.info("Графики сохранены: C:/Users/user/dataset/bilstm_training.png")
 
 logger.info('')
 logger.info('Сохраняем версию прогона')
 run_dir = make_run_dir("bilstm")
 
 config = {
-    "model": "BiLSTM+full_length_norm",
+    "model": "BiLSTM",
     "embedding_dim": 64,
     "hidden_dim": HIDDEN_DIM,
     "num_layers": 2,
@@ -618,12 +629,18 @@ config = {
 save_config(run_dir, config)
 
 data_files = {
-    "train_sequences": "D:/dataset/train_sequences.pkl",
-    "val_sequences": "D:/dataset/val_sequences.pkl",
-    "test_sequences": "D:/dataset/test_sequences.pkl",
-    "token_to_id": "D:/dataset/token_to_id.pkl",
-    "token_weights": "D:/dataset/token_weights.npy",
-    "pos_weight": "D:/dataset/pos_weight.npy",
+    # "train_sequences": "D:/dataset/train_sequences.pkl",
+    # "val_sequences": "D:/dataset/val_sequences.pkl",
+    # "test_sequences": "D:/dataset/test_sequences.pkl",
+    # "token_to_id": "D:/dataset/token_to_id.pkl",
+    # "token_weights": "D:/dataset/token_weights.npy",
+    # "pos_weight": "D:/dataset/pos_weight.npy",
+    "train_sequences": "C:/Users/user/dataset/train_sequences.pkl",
+    "val_sequences": "C:/Users/user/dataset/val_sequences.pkl",
+    "test_sequences": "C:/Users/user/dataset/test_sequences.pkl",
+    "token_to_id": "C:/Users/user/dataset/token_to_id.pkl",
+    "token_weights": "C:/Users/user/dataset/token_weights.npy",
+    "pos_weight": "C:/Users/user/dataset/pos_weight.npy",
 }
 code_files = {
     "BiLSTM.py": "C:/Users/User/Project/BiLSTM.py",
@@ -726,6 +743,8 @@ threshold_info = {
 }
 save_threshold(run_dir, threshold_info)
 
-copy_file(run_dir, "D:/dataset/bilstm_best.pt")
+# copy_file(run_dir, "D:/dataset/bilstm_best.pt")
+copy_file(run_dir, "C:/Users/user/dataset/bilstm_best.pt")
 copy_file(run_dir, log_file)
-copy_file(run_dir, "D:/dataset/bilstm_training.png", "plots")
+# copy_file(run_dir, "D:/dataset/bilstm_training.png", "plots")
+copy_file(run_dir, "C:/Users/user/dataset/bilstm_training.png", "plots")
