@@ -29,8 +29,7 @@ def add_rolling(df, window=3):
     """Скользящее среднее вероятности по дням внутри пользователя (дни по возрастанию)."""
     df = df.sort_values(['user', 'day']).copy()
     df[f'roll{window}_mean'] = (
-        df.groupby('user')['prob']
-          .transform(lambda s: s.rolling(window, min_periods=1).mean()))
+        df.groupby('user')['prob'].transform(lambda s: s.rolling(window, min_periods=1).mean()))
     return df
 
 def user_level_probs(df, prob_col):
