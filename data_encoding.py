@@ -5,10 +5,13 @@ import ast
 import pickle
 from sklearn.model_selection import train_test_split
 
+
+BASE_DIR = "C:/Users/user/dataset/"  # поменять при переезде на D:/dataset/
+
 print("КОДИРОВАНИЕ ТОКЕНОВ И ПОДГОТОВКА ДАННЫХ для обучения")
 
 print("\n1. Загрузка последовательностей из sequences.csv")
-df = pd.read_csv("D:/dataset/sequences.csv")
+df = pd.read_csv(BASE_DIR + "sequences.csv")
 df['sequence'] = df['sequence'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
 
 df = df.drop(columns=['session_id'], errors='ignore')
@@ -118,10 +121,8 @@ sample = df.iloc[0]['padded']
 print(f"Пример: {sample[:10]}")
 print(f"Длина после padding: {len(sample)}")
 
-
 print("\n6. Разделение на train/val/test по пользователям")
 
-# Разделяем пользователей на плохих и хороших
 user_anom = df.groupby('user')['has_anomaly'].max()
 bad_users = user_anom[user_anom == 1].index.tolist()
 good_users = user_anom[user_anom == 0].index.tolist()
@@ -143,20 +144,19 @@ print(f"\nTrain: {len(train_users)} пользователей ({len(bad_train)}
 print(f"Val: {len(val_users)} пользователей ({len(bad_val)} плохих)")
 print(f"Test: {len(test_users)} пользователей ({len(bad_test)} плохих)")
 
-# Сохраняем распределение пользователей для анализа
-user_anom.to_pickle("D:/dataset/user_anomaly.pkl")
-print(f"\nРаспределение пользователей сохранено: D:/dataset/user_anomaly.pkl")
+user_anom.to_pickle(BASE_DIR + "user_anomaly.pkl")
+print(f"\nРаспределение пользователей сохранено: {BASE_DIR}user_anomaly.pkl")
 
-train_df = df[df['user'].isin(train_users)]
-val_df = df[df['user'].isin(val_users)]
-test_df = df[df['user'].isin(test_users)]
+train_df = df[df['user'].isin(train_users)].copy()
+val_df = df[df['user'].isin(val_users)].copy()
+test_df = df[df['user'].isin(test_users)].copy()
 
 n_neg = (train_df['has_anomaly'] == 0).sum()
 n_pos = (train_df['has_anomaly'] == 1).sum()
 pos_weight = n_neg / n_pos
 print(f"\nМножитель штрафа за пропуск аномалий (pos_weight): {pos_weight:.1f}")
-np.save("D:/dataset/pos_weight.npy", np.array([pos_weight]))
-print(f"Сохранено: D:/dataset/pos_weight.npy")
+np.save(BASE_DIR + "pos_weight.npy", np.array([pos_weight]))
+print(f"Сохранено: {BASE_DIR}pos_weight.npy")
 
 user_anomalies = df.groupby('user')['has_anomaly'].sum()
 print(f"\nПользователей с аномалиями: {(user_anomalies > 0).sum()} из {df['user'].nunique()}")
@@ -172,57 +172,116 @@ print(f"\nПересечение train/val: {len(set(train_users) & set(val_user
 print(f"Пересечение train/test: {len(set(train_users) & set(test_users))}")
 print(f"Пересечение val/test: {len(set(val_users) & set(test_users))}")
 
-print("\n7. Сохранение данных")
+print("\n7. Полные признаки дня")
 
-def add_lag_features(df):
+def add_full_length(df):
     df = df.sort_values(['user', 'day']).copy()
     if 'full_length' not in df.columns:
         df['full_length'] = df['sequence_length']
-    # df['full_length_norm'] = df['full_length'] / df['full_length'].max()
-
-    # # лаги по известным меткам прошлых дней (без утечки будущего)
-    # df['prev_label'] = df.groupby('user')['has_anomaly'].shift(1).fillna(0)
-
-    # df['days_since_anom'] = (
-    #     df.groupby('user')['has_anomaly']
-    #       .transform(lambda s: s.shift(1).eq(0).cumsum())
-    #       .fillna(0)
-    # )
-    # # нормируем days_since_anom без разброса
-    # df['days_since_anom_norm'] = df['days_since_anom'] / 30.0
     return df
 
-train_df = add_lag_features(train_df)
-val_df = add_lag_features(val_df)
-test_df = add_lag_features(test_df)
+train_df = add_full_length(train_df)
+val_df = add_full_length(val_df)
+test_df = add_full_length(test_df)
 
-# for name, d in [('train', train_df), ('val', val_df), ('test', test_df)]:
-#     print(f"{name}: full_length max={d['full_length'].max():.0f}, "
-#           f"prev_label sum={d['prev_label'].sum():.0f}, "
-#           f"days_since_anom max={d['days_since_anom'].max():.0f}")
 max_len = float(train_df['full_length'].max())
 for d in [train_df, val_df, test_df]:
     d['full_length_norm'] = d['full_length'] / max_len
 
-with open("D:/dataset/token_to_id.pkl", 'wb') as f:
+# print("\n7b. Personal-baseline фичи (rolling 30d, shift(1), без меток)")
+
+# извлекаем из sequence колонки для фич
+def extract_daily_aggregates(d):
+    """Считает агрегаты дня из sequence"""
+    d = d.copy()
+    d['n_files'] = d['sequence'].apply(lambda s: sum(1 for t in s if t.startswith('file_')))
+    d['n_http'] = d['sequence'].apply(lambda s: sum(1 for t in s if t.startswith('http_')))
+    d['n_file_sensitive'] = d['sequence'].apply(lambda s: sum(1 for t in s if t == 'file_sensitive'))
+    d['n_email'] = d['sequence'].apply(lambda s: sum(1 for t in s if t.startswith('email_')))
+    d['n_email_external'] = d['sequence'].apply(lambda s: sum(1 for t in s if t == 'email_external'))
+    d['n_email_night'] = d['sequence'].apply(lambda s: sum(1 for t in s if t == 'email_night'))
+    d['n_device_connect'] = d['sequence'].apply(lambda s: sum(1 for t in s if t == 'device_connect'))
+    d['off_hours_ratio'] = np.where(d['n_email'] > 0, d['n_email_night'] / d['n_email'], 0.0)
+    d['email_ext_ratio'] = np.where(d['n_email'] > 0, d['n_email_external'] / d['n_email'], 0.0)
+    return d
+
+train_df = extract_daily_aggregates(train_df)
+val_df = extract_daily_aggregates(val_df)
+test_df = extract_daily_aggregates(test_df)
+
+def add_personal_baseline(d, min_periods=5, window=30):
+    """Personal-baseline фичи
+    
+    Правила:
+    - ratio-фичи: fallback 1.0 при отсутствии истории; log1p + clip(1e3) для выбросов.
+    - dev-фичи: fallback 0.0 при отсутствии истории (NaN); sign*log1p(abs) для сжатия.
+    - off_hours_dev / email_ext_dev: разность, NaN -> 0.
+    """
+    d = d.sort_values(['user', 'day']).copy()
+
+    def rolling_prev(col):
+        return (d.groupby('user')[col]
+                 .transform(lambda s: s.shift(1).rolling(window, min_periods=min_periods).mean()))
+
+    def ratio_feature(num_col, mean_col_name):
+        mean = rolling_prev(num_col)
+        d[mean_col_name] = mean
+        val = np.where(mean.isna(), 1.0, d[num_col] / mean)
+        val = np.clip(val, 0, 1e3)
+        return np.log1p(val)
+
+    def dev_feature(num_col, mean_col_name):
+        mean = rolling_prev(num_col)
+        d[mean_col_name] = mean
+        dev = np.where(mean.isna(), 0.0, d[num_col] - mean)
+        return np.sign(dev) * np.log1p(np.abs(dev))
+
+    d['files_dev'] = dev_feature('n_files', 'files_mean_30d')
+
+    d['http_ratio'] = ratio_feature('n_http', 'http_mean_30d')
+
+    d['off_hours_mean_30d'] = rolling_prev('off_hours_ratio')
+    d['off_hours_dev'] = (d['off_hours_ratio'] - d['off_hours_mean_30d']).fillna(0.0)
+
+    d['email_ext_mean_30d'] = rolling_prev('email_ext_ratio')
+    d['email_ext_dev'] = (d['email_ext_ratio'] - d['email_ext_mean_30d']).fillna(0.0)
+
+    d['file_sensitive_dev'] = dev_feature('n_file_sensitive', 'file_sensitive_mean_30d')
+
+    d['distinct_pcs_dev'] = dev_feature('n_device_connect', 'distinct_pcs_mean_30d')
+
+    return d
+
+train_df = add_personal_baseline(train_df)
+val_df = add_personal_baseline(val_df)
+test_df = add_personal_baseline(test_df)
+
+for name, d in [('train', train_df), ('val', val_df), ('test', test_df)]:
+    print(f"\n{name}:")
+    for c in ['files_dev', 'http_ratio', 'off_hours_dev', 'email_ext_dev', 'file_sensitive_dev', 'distinct_pcs_dev']:
+        print(f"  {c}: mean={d[c].mean():.3f}, std={d[c].std():.3f}")
+
+print("\n8. Сохранение данных")
+
+with open(BASE_DIR + "token_to_id.pkl", 'wb') as f:
     pickle.dump(token_to_id, f)
 
-with open("D:/dataset/id_to_token.pkl", 'wb') as f:
+with open(BASE_DIR + "id_to_token.pkl", 'wb') as f:
     pickle.dump(id_to_token, f)
 
-print("\nСохраняем веса в D:/dataset/token_weights.npy")
-np.save("D:/dataset/token_weights.npy", weights_array)
+print(f"\nСохраняем веса в {BASE_DIR}token_weights.npy")
+np.save(BASE_DIR + "token_weights.npy", weights_array)
 
 print("\nСохраняем датасеты")
-train_df.to_pickle("D:/dataset/train_sequences.pkl")
-val_df.to_pickle("D:/dataset/val_sequences.pkl")
-test_df.to_pickle("D:/dataset/test_sequences.pkl")
+train_df.to_pickle(BASE_DIR + "train_sequences.pkl")
+val_df.to_pickle(BASE_DIR + "val_sequences.pkl")
+test_df.to_pickle(BASE_DIR + "test_sequences.pkl")
 
-print(f"D:/dataset/token_to_id.pkl")
-print(f"D:/dataset/id_to_token.pkl")
-print(f"D:/dataset/token_weights.npy")
-print(f"D:/dataset/train_sequences.pkl")
-print(f"D:/dataset/val_sequences.pkl")
-print(f"D:/dataset/test_sequences.pkl")
+print(f"{BASE_DIR}token_to_id.pkl")
+print(f"{BASE_DIR}id_to_token.pkl")
+print(f"{BASE_DIR}token_weights.npy")
+print(f"{BASE_DIR}train_sequences.pkl")
+print(f"{BASE_DIR}val_sequences.pkl")
+print(f"{BASE_DIR}test_sequences.pkl")
 
 print("\nКОДИРОВАНИЕ ЗАВЕРШЕНО УСПЕШНО")

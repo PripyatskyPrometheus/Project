@@ -9,13 +9,14 @@ from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from sklearn.metrics import precision_recall_fscore_support, roc_auc_score, average_precision_score, precision_recall_curve, f1_score, precision_score, recall_score
 from sklearn.isotonic import IsotonicRegression
+from sklearn.preprocessing import StandardScaler
 import time
 import matplotlib.pyplot as plt
 import logging
 import sys
 from save_run import *
 
-log_file = "D:/dataset/log/bilstm.log"
+log_file = "C:/Users/user/dataset/log/bilstm.log"
 
 logger = logging.getLogger('BiLSTM')
 logger.setLevel(logging.INFO)
@@ -30,10 +31,11 @@ console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
-# Дополнительные признаки дня (кроме последовательности токенов)
-EXTRA_COLS = ['full_length_norm']
+# Дополнительные признаки дня
+EXTRA_COLS = ['usb_per_file', 'ext_email_share', 'risk_http_share', 'domain_entropy_norm', 'night_activity_ratio', 'is_weekend', 
+              'n_usb_connect_zpop', 'n_file_total_zpop', 'n_http_total_zpop', 'distinct_pcs_real_zpop', 'full_length_zpop', 
+              'log_cnt_http_leak', 'log_cnt_http_job', 'log_cnt_file_sensitive']
 N_EXTRA = len(EXTRA_COLS)
-
 
 class InsiderDataset(Dataset):
     def __init__(self, df):
@@ -71,9 +73,17 @@ class InsiderBiLSTM(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
         self.attn = nn.Linear(hidden_dim * 2, 1)
-        # вход классификатора: attention-вектор + нормированная длина + доп. признаки
-        self.fc = nn.Linear(hidden_dim * 2 + 1 + n_extra, 1)
 
+        # Отдельная ветка для признаков + нормированной длины
+        self.extra_net = nn.Sequential(
+            nn.Linear(1 + n_extra, 32),
+            nn.LayerNorm(32),
+            nn.ReLU(),
+            nn.Dropout(dropout * 0.5)
+        )
+        # вход классификатора: attention-вектор + нормированная длина + доп. признаки
+        self.fc = nn.Linear(hidden_dim * 2 + 32, 1)
+    
     def forward(self, x, mask, extra):
         embedded = self.embedding(x)
         weights = self.token_weights[x].unsqueeze(-1)
@@ -92,12 +102,16 @@ class InsiderBiLSTM(nn.Module):
         attn_out = (lstm_out * attn_weights).sum(dim=1)
 
         lengths_norm = lengths.float().unsqueeze(-1) / float(self.max_len)
-        combined = torch.cat([attn_out, lengths_norm, extra], dim=1)
+
+        # combined = torch.cat([attn_out, lengths_norm, extra], dim=1)
+        tab_in = torch.cat([lengths_norm, extra], dim=1)
+        tab_out = self.extra_net(tab_in)
+
+        combined = torch.cat([attn_out, tab_out], dim=1)
 
         combined = self.dropout(combined)
         out = self.fc(combined)
         return out.squeeze(-1)
-
 
 def train_epoch(model, loader, criterion, optimizer, device):
     model.train()
@@ -121,7 +135,6 @@ def train_epoch(model, loader, criterion, optimizer, device):
         n_batches += 1
 
     return total_loss / n_batches
-
 
 def eval_epoch(model, loader, criterion, device):
     model.eval()
@@ -150,7 +163,6 @@ def eval_epoch(model, loader, criterion, device):
     avg_loss = total_loss / n_batches
     return avg_loss, np.array(all_probs), np.array(all_labels)
 
-
 def calculate_metrics(labels, probs, threshold=0.5):
     preds = (probs >= threshold).astype(int)
     p, r, f1, _ = precision_recall_fscore_support(labels, preds, average='binary', zero_division=0)
@@ -158,21 +170,17 @@ def calculate_metrics(labels, probs, threshold=0.5):
     auprc = average_precision_score(labels, probs)
     return p, r, f1, auroc, auprc
 
-
 def add_rolling(df, window=3):
     """Скользящее среднее вероятности по дням внутри пользователя (дни по возрастанию)."""
     df = df.sort_values(['user', 'day']).copy()
     df[f'roll{window}_mean'] = (
         df.groupby('user')['prob']
-          .transform(lambda s: s.rolling(window, min_periods=1).mean())
-    )
+          .transform(lambda s: s.rolling(window, min_periods=1).mean()))
     return df
-
 
 def user_level_probs(df, prob_col):
     g = df.groupby('user')
     return g[prob_col].max(), g['has_anomaly'].max()
-
 
 def select_f1_threshold(labels, scores, plateau_delta=0.01):
     """Возвращает лучший порог, F1, диапозон, топ-5 (по уникальным порогам)."""
@@ -235,7 +243,7 @@ def report_user_rule(name, val_probs_series, val_labels_series, test_probs_serie
     logger.info(f"  Топ-5 порогов на val:")
     for t, f in info['top5']:
         logger.info(f"    {t:.4f}: {f:.4f}")
-    logger.info(f"  TEST @ {th:.4f}: F1 users = {t_f1:.4f}, P = {t_p:.4f}, R = {t_r:.4f}, caught = {caught}/{total}")
+    logger.info(f"  TEST {th:.4f}: F1 users = {t_f1:.4f}, P = {t_p:.4f}, R = {t_r:.4f}, caught = {caught}/{total}")
 
     return {
         'rule': name,
@@ -262,15 +270,15 @@ if torch.cuda.is_available():
 torch.backends.cudnn.benchmark = True
 logger.info(f"PyTorch: {torch.__version__}")
 
-train_df = pd.read_pickle("D:/dataset/train_sequences.pkl")
-val_df = pd.read_pickle("D:/dataset/val_sequences.pkl")
-test_df = pd.read_pickle("D:/dataset/test_sequences.pkl")
+train_df = pd.read_pickle("C:/Users/user/dataset/train_sequences.pkl")
+val_df = pd.read_pickle("C:/Users/user/dataset/val_sequences.pkl")
+test_df = pd.read_pickle("C:/Users/user/dataset/test_sequences.pkl")
 
-with open("D:/dataset/token_to_id.pkl", 'rb') as f:
+with open("C:/Users/user/dataset/token_to_id.pkl", 'rb') as f:
     token_to_id = pickle.load(f)
 
-token_weights = np.load("D:/dataset/token_weights.npy")
-pos_weight = np.load("D:/dataset/pos_weight.npy")[0]
+token_weights = np.load("C:/Users/user/dataset/token_weights.npy")
+pos_weight = np.load("C:/Users/user/dataset/pos_weight.npy")[0]
 pos_weight_sqrt = np.sqrt(pos_weight)
 
 logger.info(f"\nTrain: {len(train_df)} (user, day) ({train_df['has_anomaly'].sum()} аномалий)")
@@ -278,6 +286,40 @@ logger.info(f"Val: {len(val_df)} (user, day) ({val_df['has_anomaly'].sum()} ан
 logger.info(f"Test: {len(test_df)} (user, day) ({test_df['has_anomaly'].sum()} аномалий)")
 logger.info(f"Размер словаря: {len(token_to_id)}")
 logger.info(f"pos_weight: {pos_weight:.1f} -> sqrt(pos_weight): {pos_weight_sqrt:.1f}")
+
+extra_df = pd.read_parquet("C:/Users/user/dataset/extra_day_features.parquet") # на Kaggle поменять путь!
+for d in (train_df, val_df, test_df, extra_df):
+    d['day'] = pd.to_datetime(d['day']).dt.date
+
+extra_feature_cols = [c for c in extra_df.columns if c not in ('user', 'day')]
+train_df = pd.merge(train_df.drop(columns=extra_feature_cols, errors='ignore'), extra_df, on=['user', 'day'], how='left')
+val_df = pd.merge(val_df.drop(columns=extra_feature_cols, errors='ignore'), extra_df, on=['user', 'day'], how='left')
+test_df = pd.merge(test_df.drop(columns=extra_feature_cols, errors='ignore'), extra_df, on=['user', 'day'], how='left')
+
+for d in (train_df, val_df, test_df):
+    d[extra_feature_cols] = d[extra_feature_cols].fillna(0)
+    # Редкие счётчики и кросс-канальные отношения
+    cnt_email_ext = d['sequence'].apply(lambda seq: sum(1 for t in seq if t == 'email_external'))
+    d['usb_per_file'] = np.where(d['n_file_total'] > 0, d['n_usb_connect'] / d['n_file_total'], d['n_usb_connect'])
+    d['ext_email_share'] = np.where(d['n_email_total'] > 0, cnt_email_ext / d['n_email_total'], 0.0)
+    d['risk_http_share'] = np.where(d['n_http_total'] > 0, d['n_http_risk'] / d['n_http_total'], 0.0)
+    d['log_cnt_http_leak'] = np.log1p(d['sequence'].apply(lambda seq: sum(1 for t in seq if t == 'http_leak')))
+    d['log_cnt_http_job'] = np.log1p(d['sequence'].apply(lambda seq: sum(1 for t in seq if t == 'http_job')))
+    d['log_cnt_file_sensitive'] = np.log1p(d['sequence'].apply(lambda seq: sum(1 for t in seq if t == 'file_sensitive')))
+
+# Популяционные z-score строго по train_df
+for col in ['n_usb_connect', 'n_file_total', 'n_http_total', 'distinct_pcs_real', 'full_length']:
+    m, s = float(train_df[col].mean()), float(train_df[col].std())
+    s = 1.0 if s < 1e-9 else s
+    for d in (train_df, val_df, test_df):
+        d[f'{col}_zpop'] = (d[col] - m) / s
+
+# Масштабирование всех EXTRA_COLS для нейросети строго по train_df
+scaler = StandardScaler()
+train_df[EXTRA_COLS] = scaler.fit_transform(train_df[EXTRA_COLS].astype(np.float32))
+val_df[EXTRA_COLS] = scaler.transform(val_df[EXTRA_COLS].astype(np.float32))
+test_df[EXTRA_COLS] = scaler.transform(test_df[EXTRA_COLS].astype(np.float32))
+
 logger.info(f"Доп. признаки ({N_EXTRA}): {EXTRA_COLS}")
 for c in EXTRA_COLS:
     logger.info(f"  {c}: mean={train_df[c].mean():.3f}, std={train_df[c].std():.3f}")
@@ -323,7 +365,7 @@ model = InsiderBiLSTM(
 ).to(device)
 
 logger.info(f"Модель на устройстве: {next(model.parameters()).device}")
-logger.info(f"Всего памяти GPU: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+# logger.info(f"Всего памяти GPU: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
 
 total_params = sum(p.numel() for p in model.parameters())
 trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -384,7 +426,7 @@ for epoch in range(N_EPOCHS):
         best_val_auprc = val_auprc
         best_epoch = epoch + 1
         patience_counter = 0
-        torch.save(model.state_dict(), "D:/dataset/bilstm_best.pt")
+        torch.save(model.state_dict(), "C:/Users/user/dataset/bilstm_best.pt")
         logger.info(f"Новая лучшая модель (AUPRC={val_auprc:.4f})")
     else:
         patience_counter += 1
@@ -410,7 +452,7 @@ model_eval = InsiderBiLSTM(
     n_extra=N_EXTRA,
 ).to(device)
 
-model_eval.load_state_dict(torch.load("D:/dataset/bilstm_best.pt"))
+model_eval.load_state_dict(torch.load("C:/Users/user/dataset/bilstm_best.pt"))
 model_eval.eval()
 
 test_loss, test_probs, test_labels = eval_epoch(model_eval, test_loader, criterion, device)
@@ -477,7 +519,7 @@ logger.info(f"\nЛучшее правило по val F1: {best_rule_name} "
             f"(val={best_rule['val_f1_users']:.4f}, "
             f"test={best_rule['test_f1_users']:.4f})")
 
-np.save("D:/dataset/best_threshold.npy", np.array([best_threshold]))
+np.save("C:/Users/user/dataset/best_threshold.npy", np.array([best_threshold]))
 logger.info(f"best_threshold.npy (rule={best_rule_name}): {best_threshold:.4f}")
 
 # Анализ ошибок — по лучшему правилу
@@ -553,8 +595,8 @@ for r in [rule_max, rule_hybrid_04, rule_hybrid_05, rule_iso]:
     results[f'{key}_val_f1'] = r['val_f1_users']
     results[f'{key}_test_f1'] = r['test_f1_users']
     results[f'{key}_caught'] = r['caught']
-pd.DataFrame([results]).to_csv("D:/dataset/bilstm_results.csv", index=False)
-logger.info(f"Результаты сохранены: D:/dataset/bilstm_results.csv")
+pd.DataFrame([results]).to_csv("C:/Users/user/dataset/bilstm_results.csv", index=False)
+logger.info(f"Результаты сохранены: C:/Users/user/dataset/bilstm_results.csv")
 
 fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
@@ -584,16 +626,16 @@ axes[2].legend()
 axes[2].grid(True)
 
 plt.tight_layout()
-plt.savefig("D:/dataset/bilstm_training.png", dpi=150)
+plt.savefig("C:/Users/user/dataset/bilstm_training.png", dpi=150)
 plt.close()
-logger.info("Графики сохранены: D:/dataset/bilstm_training.png")
+logger.info("Графики сохранены: C:/Users/user/dataset/bilstm_training.png")
 
 logger.info('')
 logger.info('Сохраняем версию прогона')
 run_dir = make_run_dir("bilstm")
 
 config = {
-    "model": "BiLSTM+full_length_norm",
+    "model": "BiLSTM",
     "embedding_dim": 64,
     "hidden_dim": HIDDEN_DIM,
     "num_layers": 2,
@@ -612,18 +654,21 @@ config = {
     "hybrid_alpha_recall": 0.5,
     "hybrid_window": 3,
     "extra_cols": EXTRA_COLS,
+    "extra_net_dim": 32,
+    "feature_engineering": "domain_entropy_zpop_v2",
     "best_rule": best_rule_name,
     "random_seed": 42,
 }
 save_config(run_dir, config)
 
 data_files = {
-    "train_sequences": "D:/dataset/train_sequences.pkl",
-    "val_sequences": "D:/dataset/val_sequences.pkl",
-    "test_sequences": "D:/dataset/test_sequences.pkl",
-    "token_to_id": "D:/dataset/token_to_id.pkl",
-    "token_weights": "D:/dataset/token_weights.npy",
-    "pos_weight": "D:/dataset/pos_weight.npy",
+    "train_sequences": "C:/Users/user/dataset/train_sequences.pkl",
+    "val_sequences": "C:/Users/user/dataset/val_sequences.pkl",
+    "test_sequences": "C:/Users/user/dataset/test_sequences.pkl",
+    "token_to_id": "C:/Users/user/dataset/token_to_id.pkl",
+    "token_weights": "C:/Users/user/dataset/token_weights.npy",
+    "pos_weight": "C:/Users/user/dataset/pos_weight.npy",
+    "extra_day_features": "C:/Users/user/dataset/extra_day_features.parquet"
 }
 code_files = {
     "BiLSTM.py": "C:/Users/User/Project/BiLSTM.py",
@@ -726,6 +771,6 @@ threshold_info = {
 }
 save_threshold(run_dir, threshold_info)
 
-copy_file(run_dir, "D:/dataset/bilstm_best.pt")
+copy_file(run_dir, "C:/Users/user/dataset/bilstm_best.pt")
 copy_file(run_dir, log_file)
-copy_file(run_dir, "D:/dataset/bilstm_training.png", "plots")
+copy_file(run_dir, "C:/Users/user/dataset/bilstm_training.png", "plots")

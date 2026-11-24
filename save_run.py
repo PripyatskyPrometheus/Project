@@ -7,7 +7,7 @@ from datetime import datetime
 
 def make_run_dir(model_name):
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    run_dir = "D:/dataset/runs/" + timestamp + "_" + model_name
+    run_dir = "C:/Users/user/dataset/runs/" + timestamp + "_" + model_name
 
     if not os.path.exists(run_dir):
         os.makedirs(run_dir)
