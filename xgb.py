@@ -30,7 +30,12 @@ def calculate_metrics(labels, probs, threshold=0.5):
 def add_rolling(df, window=3):
     """Скользящее среднее вероятности по дням внутри пользователя (дни по возрастанию)."""
     df = df.sort_values(['user', 'day']).copy()
+<<<<<<< HEAD
     df[f'roll{window}_mean'] = (df.groupby('user')['prob'].transform(lambda s: s.rolling(window, min_periods=1).mean()))
+=======
+    df[f'roll{window}_mean'] = (
+        df.groupby('user')['prob'].transform(lambda s: s.rolling(window, min_periods=1).mean()))
+>>>>>>> 6d63fc79d08352e8387363a5e766a2f7beba8edf
     return df
 
 def user_level_probs(df, prob_col):
