@@ -2,6 +2,9 @@
 import os, sys, time, logging
 import numpy as np, pandas as pd
 import xgboost as xgb
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier, IsolationForest
 from sklearn.isotonic import IsotonicRegression
 from sklearn.metrics import *
 from save_run import *
@@ -186,4 +189,46 @@ save_split(run_dir, train_df['user'].unique(), val_df['user'].unique(), test_df[
 save_predictions(run_dir, "val_probs", val_df[['user', 'day', 'prob', 'has_anomaly']])
 save_predictions(run_dir, "test_probs", test_df[['user', 'day', 'prob', 'has_anomaly']])
 save_metrics(run_dir, {"days": {"f1": float(test_f1), "auroc": float(test_auroc), "auprc": float(test_auprc)}, "best_user_rule": best_rule})
+
+logger.info("\n5. Сравнение с классическими бейзлайнами на тех же 42 признаках")
+scaler = StandardScaler()
+X_tr_s = scaler.fit_transform(train_df[FEATURE_COLS])
+X_va_s = scaler.transform(val_df[FEATURE_COLS])
+X_te_s = scaler.transform(test_df[FEATURE_COLS])
+
+baselines = {
+    "LogisticRegression": (LogisticRegression(class_weight='balanced', max_iter=1000, random_state=42), True),
+    "RandomForest": (RandomForestClassifier(n_estimators=200, max_depth=8, min_samples_leaf=5, class_weight='balanced_subsample', n_jobs=-1, random_state=42), False),
+    "IsolationForest": (IsolationForest(n_estimators=200, contamination=0.003, n_jobs=-1, random_state=42), False),
+}
+
+summary_rows = [{
+    "Model": "XGBoost (FE)",
+    "Day_AUPRC": round(test_auprc, 4),
+    "User_F1": round(best_rule['test_f1_users'], 4),
+    "User_P": round(best_rule['test_precision'], 4),
+    "User_R": round(best_rule['test_recall'], 4),
+    "Caught": best_rule['caught']
+}]
+
+for m_name, (clf, scaled) in baselines.items():
+    logger.info(f"Обучение {m_name}")
+    X_tr_m, X_va_m, X_te_m = (X_tr_s, X_va_s, X_te_s) if scaled else (train_df[FEATURE_COLS], val_df[FEATURE_COLS], test_df[FEATURE_COLS])
+    if m_name == "IsolationForest":
+        clf.fit(X_tr_m[train_df['has_anomaly'].values == 0])
+        va_p, te_p = -clf.score_samples(X_va_m), -clf.score_samples(X_te_m)
+    else:
+        clf.fit(X_tr_m, train_df['has_anomaly'].values)
+        va_p, te_p = clf.predict_proba(X_va_m)[:, 1], clf.predict_proba(X_te_m)[:, 1]
+    
+    _, _, _, _, m_auprc = calculate_metrics(test_df['has_anomaly'].values, te_p)
+    v_tmp = val_df[['user', 'has_anomaly']].assign(p=va_p).groupby('user').max()
+    t_tmp = test_df[['user', 'has_anomaly']].assign(p=te_p).groupby('user').max()
+    res = report_user_rule(f"{m_name} max(prob)", v_tmp['p'], v_tmp['has_anomaly'], t_tmp['p'], t_tmp['has_anomaly'], logger)
+    summary_rows.append({"Model": m_name, "Day_AUPRC": round(m_auprc, 4), "User_F1": round(res['test_f1_users'], 4), "User_P": round(res['test_precision'], 4), "User_R": round(res['test_recall'], 4), "Caught": res['caught']})
+
+summary_df = pd.DataFrame(summary_rows)
+logger.info("ИТОГОВАЯ ТАБЛИЦА ДЛЯ (TEST)\n" + summary_df.to_string(index=False))
+summary_df.to_csv(run_dir + "/all_models_comparison.csv", index=False)
+
 copy_file(run_dir, BASE_DIR + "log/xgb.log")
