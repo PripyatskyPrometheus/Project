@@ -8,8 +8,8 @@ import re
 # data_path = "D:/dataset/labels/"
 # output_path = "D:/dataset/"
 
-data_path = "C:/Users/user/dataset/labels/"
-output_path = "C:/Users/user/dataset/"
+data_path = "D:/dataset/labels/"
+output_path = "D:/dataset/"
 
 MAX_LEN = 250
 

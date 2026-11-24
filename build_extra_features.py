@@ -5,8 +5,8 @@ from collections import Counter
 import numpy as np
 import pandas as pd
 
-LABELS_DIR = "C:/Users/user/dataset/labels/"
-OUTPUT_PATH = "C:/Users/user/dataset/extra_day_features.parquet"
+LABELS_DIR = "D:/dataset/labels/"
+OUTPUT_PATH = "D:/dataset/extra_day_features.parquet"
 
 
 def extract_day_and_night(date_series):

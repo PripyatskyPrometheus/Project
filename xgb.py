@@ -9,14 +9,16 @@ from sklearn.isotonic import IsotonicRegression
 from sklearn.metrics import *
 from save_run import *
 
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s | %(levelname)s | %(message)s',
     handlers=[logging.FileHandler("C:/Users/user/dataset/log/xgb.log", mode='w', encoding='utf-8'),
-        logging.StreamHandler(sys.stdout)])
+    logging.StreamHandler(sys.stdout)])
 logger = logging.getLogger('XGBoost')
 
-BASE_DIR = "C:/Users/user/dataset/"
+# BASE_DIR = "C:/Users/user/dataset/"
+BASE_DIR = "D:/dataset/"
 
 def calculate_metrics(labels, probs, threshold=0.5):
     preds = (probs >= threshold).astype(int)
@@ -28,9 +30,7 @@ def calculate_metrics(labels, probs, threshold=0.5):
 def add_rolling(df, window=3):
     """Скользящее среднее вероятности по дням внутри пользователя (дни по возрастанию)."""
     df = df.sort_values(['user', 'day']).copy()
-    df[f'roll{window}_mean'] = (
-        df.groupby('user')['prob']
-          .transform(lambda s: s.rolling(window, min_periods=1).mean()))
+    df[f'roll{window}_mean'] = (df.groupby('user')['prob'].transform(lambda s: s.rolling(window, min_periods=1).mean()))
     return df
 
 def user_level_probs(df, prob_col):
@@ -46,12 +46,7 @@ def select_f1_threshold(labels, scores, plateau_delta=0.01):
 
     precision, recall, thresholds = precision_recall_curve(labels, scores)
     denom = precision[:-1] + recall[:-1]
-    f1 = np.divide(
-        2 * precision[:-1] * recall[:-1],
-        denom,
-        out=np.zeros_like(denom),
-        where=denom != 0,
-    )
+    f1 = np.divide(2 * precision[:-1] * recall[:-1], denom, out=np.zeros_like(denom), where=denom != 0)
 
     best_idx = int(np.argmax(f1))
     best_th = float(thresholds[best_idx])
@@ -137,20 +132,25 @@ for d in (train_df, val_df, test_df):
     d['ext_email_share'] = np.where(d['n_email_total'] > 0, d['cnt_email_external'] / d['n_email_total'], 0.0).astype(np.float32)
     d['risk_http_share'] = np.where(d['n_http_total'] > 0, d['n_http_risk'] / d['n_http_total'], 0.0).astype(np.float32)
     d['entropy_x_http'] = (d['domain_entropy'] * np.log1p(d['n_http_total'])).astype(np.float32)
-z_cols = ['n_http_total', 'n_file_total', 'n_email_total', 'total_attachments', 'unique_domains', 'domain_entropy', 'distinct_pcs_real', 'n_usb_connect', 'full_length']
+z_cols = ['n_http_total', 'n_file_total', 'n_email_total', 'total_attachments', 'unique_domains', 'domain_entropy', 'distinct_pcs_real', 
+    'n_usb_connect', 'full_length']
 for col in z_cols:
     m, s = float(train_df[col].mean()), float(train_df[col].std())
     s = 1.0 if s < 1e-9 else s
     for d in (train_df, val_df, test_df):
         d[f'{col}_zpop'] = ((d[col] - m) / s).astype(np.float32)
-FEATURE_COLS = extra_feature_cols + ['full_length', 'usb_per_file', 'ext_email_share', 'risk_http_share', 'entropy_x_http'] + [f'cnt_{t}' for t in target_tokens] + [f'{c}_zpop' for c in z_cols]
+
+FEATURE_COLS = extra_feature_cols + ['full_length', 'usb_per_file', 'ext_email_share', 'risk_http_share', 'entropy_x_http'] 
++ [f'cnt_{t}' for t in target_tokens] + [f'{c}_zpop' for c in z_cols]
 logger.info(f"Всего признаков: {len(FEATURE_COLS)}")
 
 logger.info("3. Обучение XGBoost на CPU")
 pos_weight = float(np.sqrt(np.load(BASE_DIR + "pos_weight.npy")[0]))
-model = xgb.XGBClassifier(n_estimators=1000, learning_rate=0.03, max_depth=5, subsample=0.8, colsample_bytree=0.8, min_child_weight=5, scale_pos_weight=pos_weight, eval_metric='aucpr', early_stopping_rounds=50, tree_method='hist', n_jobs=-1, random_state=42)
+model = xgb.XGBClassifier(n_estimators=1000, learning_rate=0.03, max_depth=5, subsample=0.8, colsample_bytree=0.8, min_child_weight=5, 
+scale_pos_weight=pos_weight, eval_metric='aucpr', early_stopping_rounds=50, tree_method='hist', n_jobs=-1, random_state=42)
 t0 = time.time()
-model.fit(train_df[FEATURE_COLS], train_df['has_anomaly'].values, eval_set=[(train_df[FEATURE_COLS], train_df['has_anomaly'].values), (val_df[FEATURE_COLS], val_df['has_anomaly'].values)], verbose=50)
+model.fit(train_df[FEATURE_COLS], train_df['has_anomaly'].values, eval_set=[(train_df[FEATURE_COLS], train_df['has_anomaly'].values), 
+(val_df[FEATURE_COLS], val_df['has_anomaly'].values)], verbose=50)
 logger.info(f"Обучение завершено за {time.time() - t0:.1f} сек (best_iteration={model.best_iteration})")
 val_probs = model.predict_proba(val_df[FEATURE_COLS])[:, 1]
 test_probs = model.predict_proba(test_df[FEATURE_COLS])[:, 1]
@@ -225,7 +225,8 @@ for m_name, (clf, scaled) in baselines.items():
     v_tmp = val_df[['user', 'has_anomaly']].assign(p=va_p).groupby('user').max()
     t_tmp = test_df[['user', 'has_anomaly']].assign(p=te_p).groupby('user').max()
     res = report_user_rule(f"{m_name} max(prob)", v_tmp['p'], v_tmp['has_anomaly'], t_tmp['p'], t_tmp['has_anomaly'], logger)
-    summary_rows.append({"Model": m_name, "Day_AUPRC": round(m_auprc, 4), "User_F1": round(res['test_f1_users'], 4), "User_P": round(res['test_precision'], 4), "User_R": round(res['test_recall'], 4), "Caught": res['caught']})
+    summary_rows.append({"Model": m_name, "Day_AUPRC": round(m_auprc, 4), "User_F1": round(res['test_f1_users'], 4), 
+    "User_P": round(res['test_precision'], 4), "User_R": round(res['test_recall'], 4), "Caught": res['caught']})
 
 summary_df = pd.DataFrame(summary_rows)
 logger.info("ИТОГОВАЯ ТАБЛИЦА ДЛЯ (TEST)\n" + summary_df.to_string(index=False))

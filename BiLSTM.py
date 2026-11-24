@@ -16,7 +16,7 @@ import logging
 import sys
 from save_run import *
 
-log_file = "C:/Users/user/dataset/log/bilstm.log"
+log_file = "D:/dataset/log/bilstm.log"
 
 logger = logging.getLogger('BiLSTM')
 logger.setLevel(logging.INFO)

@@ -1,6 +1,4 @@
 import pandas as pd
-df = pd.read_pickle("C:/Users/user/dataset/train_sequences.pkl")
-print(df[['files_ratio','file_sensitive_ratio','distinct_pcs_ratio']].describe())
-# ожидаем: mean ~0.3-0.5, std > 0.5, max < 7, min 0
-print("NaN:", df[['files_ratio','file_sensitive_ratio','distinct_pcs_ratio']].isna().sum().sum())
-# ожидаем: 0
+df = pd.read_parquet("D:/dataset/extra_day_features_v2.parquet")
+print(df[['http','pct_30d_http','delta_30d_http','pc_count','night_share','external']].describe())
+print("NaN:", df.isna().sum().sum())
