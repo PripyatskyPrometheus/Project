@@ -1,166 +1,356 @@
-Epoch 16/20
-Train Loss: 0.0500
-Val Loss: 0.1308
-Val F1: 0.3760
-Val AUPRC: 0.4248
-Время: 243.0 секунд
-Максимальная загрузка памяти GPU: 0.38 GB
+ПЕРВЫЙ ЭТАП: ПРОВЕРКА УСТРОЙСТВА И ЗАГРУЗКА ДАННЫХ
+Используется устройство: cuda
+GPU: NVIDIA GeForce GTX 1050
+PyTorch: 2.7.1+cu118
 
-Epoch 17/20
-Train Loss: 0.0480
-Val Loss: 0.1129
-Val F1: 0.3348
-Val AUPRC: 0.4070
+Train: 183405 (user, day) (531 аномалий)
+Val: 46313 (user, day) (194 аномалий)
+Test: 100734 (user, day) (261 аномалий)
+Размер словаря: 21
+pos_weight: 344.4 -> sqrt(pos_weight): 18.6
+Доп. признаки (34):
+  logon: mean=0.000, std=1.000
+  logon_night: mean=0.000, std=1.000
+  logoff: mean=0.000, std=1.000
+  pc_count: mean=0.000, std=1.000
+  usb: mean=-0.000, std=1.000
+  usb_night: mean=0.000, std=1.000
+  files: mean=-0.000, std=1.000
+  files_night: mean=-0.000, std=1.000
+  email: mean=-0.000, std=1.000
+  email_night: mean=0.000, std=1.000
+  attached: mean=-0.000, std=1.000
+  external: mean=-0.000, std=1.000
+  external_night: mean=0.000, std=1.000
+  night_share_no_http: mean=-0.000, std=1.000
+  external_share: mean=-0.000, std=1.000
+  attachment_share: mean=-0.000, std=1.000
+  weekend: mean=0.000, std=1.000
+  usb_per_file: mean=-0.000, std=1.000
+  coverage_30d: mean=0.000, std=1.000
+  previous_observation_gap: mean=-0.000, std=1.000
+  pct_30d_logon: mean=-0.000, std=1.000
+  delta_30d_logon: mean=0.000, std=1.000
+  pct_30d_usb: mean=0.000, std=1.000
+  delta_30d_usb: mean=-0.000, std=1.000
+  pct_30d_files: mean=-0.000, std=1.000
+  delta_30d_files: mean=0.000, std=1.000
+  pct_30d_email: mean=0.000, std=1.000
+  delta_30d_email: mean=0.000, std=1.000
+  pct_30d_external: mean=-0.000, std=1.000
+  delta_30d_external: mean=-0.000, std=1.000
+  pct_30d_pc_count: mean=-0.000, std=1.000
+  delta_30d_pc_count: mean=-0.000, std=1.000
+  pct_30d_night_share_no_http: mean=-0.000, std=1.000
+  delta_30d_night_share_no_http: mean=-0.000, std=1.000
+
+ВТОРОЙ ЭТАП: СОЗДАНИЕ DATASET И DATALOADER
+
+Train-батчи: 1433
+Val-батчи: 362
+Test-батчи: 787
+Пример батча:
+Sequence shape: torch.Size([128, 250])
+Mask shape: torch.Size([128, 250])
+Extra shape: torch.Size([128, 34])
+Label shape: torch.Size([128])
+
+ТРЕТИЙ ЭТАП: СОЗДАНИЕ МОДЕЛИ BiLSTM
+Модель на устройстве: cuda:0
+
+Всего параметров: 597026
+Обучаемых параметров: 597026
+hidden_dim=128, n_extra=34
+
+Архитектура модели:
+InsiderBiLSTM(
+  (embedding): Embedding(21, 64, padding_idx=19)
+  (bilstm): LSTM(64, 128, num_layers=2, batch_first=True, dropout=0.4, bidirectional=True)
+  (dropout): Dropout(p=0.4, inplace=False)
+  (attn): Linear(in_features=256, out_features=1, bias=True)
+  (extra_net): Sequential(
+    (0): Linear(in_features=35, out_features=32, bias=True)
+    (1): LayerNorm((32,), eps=1e-05, elementwise_affine=True)
+    (2): ReLU()
+    (3): Dropout(p=0.2, inplace=False)
+  )
+  (fc): Linear(in_features=288, out_features=1, bias=True)
+)
+pos_weight=18.6
+
+ЧЕТВЕРТЫЙ ЭТАП: ОБУЧЕНИЕ
+Epoch  1/20
+Train Loss: 0.1276
+Val Loss: 0.1712
+Val F1: 0.1771
+Val AUPRC: 0.1604
+Время: 244.7 секунд
+Максимальная загрузка памяти GPU: 0.37 GB
+Новая лучшая модель (AUPRC=0.1604)
+Epoch  2/20
+Train Loss: 0.0916
+Val Loss: 0.1559
+Val F1: 0.2584
+Val AUPRC: 0.2237
+Время: 242.4 секунд
+Максимальная загрузка памяти GPU: 0.37 GB
+Новая лучшая модель (AUPRC=0.2237)
+Epoch  3/20
+Train Loss: 0.0794
+Val Loss: 0.1591
+Val F1: 0.2548
+Val AUPRC: 0.2109
+Время: 241.5 секунд
+Максимальная загрузка памяти GPU: 0.37 GB
+Epoch  4/20
+Train Loss: 0.0746
+Val Loss: 0.1161
+Val F1: 0.2597
+Val AUPRC: 0.2750
+Время: 241.1 секунд
+Максимальная загрузка памяти GPU: 0.37 GB
+Новая лучшая модель (AUPRC=0.2750)
+Epoch  5/20
+Train Loss: 0.0662
+Val Loss: 0.1204
+Val F1: 0.2796
+Val AUPRC: 0.3377
+Время: 241.7 секунд
+Максимальная загрузка памяти GPU: 0.38 GB
+Новая лучшая модель (AUPRC=0.3377)
+Epoch  6/20
+Train Loss: 0.0650
+Val Loss: 0.1135
+Val F1: 0.2553
+Val AUPRC: 0.3147
+Время: 241.8 секунд
+Максимальная загрузка памяти GPU: 0.38 GB
+Epoch  7/20
+Train Loss: 0.0621
+Val Loss: 0.1194
+Val F1: 0.2773
+Val AUPRC: 0.3324
+Время: 241.7 секунд
+Максимальная загрузка памяти GPU: 0.38 GB
+Epoch  8/20
+Train Loss: 0.0592
+Val Loss: 0.1206
+Val F1: 0.3366
+Val AUPRC: 0.3869
+Время: 242.0 секунд
+Максимальная загрузка памяти GPU: 0.38 GB
+Новая лучшая модель (AUPRC=0.3869)
+Epoch  9/20
+Train Loss: 0.0580
+Val Loss: 0.1253
+Val F1: 0.3260
+Val AUPRC: 0.3685
+Время: 241.9 секунд
+Максимальная загрузка памяти GPU: 0.38 GB
+Epoch 10/20
+Train Loss: 0.0594
+Val Loss: 0.1218
+Val F1: 0.3256
+Val AUPRC: 0.4088
+Время: 241.6 секунд
+Максимальная загрузка памяти GPU: 0.38 GB
+Новая лучшая модель (AUPRC=0.4088)
+Epoch 11/20
+Train Loss: 0.0594
+Val Loss: 0.1186
+Val F1: 0.3564
+Val AUPRC: 0.3987
+Время: 242.0 секунд
+Максимальная загрузка памяти GPU: 0.38 GB
+Epoch 12/20
+Train Loss: 0.0585
+Val Loss: 0.1071
+Val F1: 0.3343
+Val AUPRC: 0.4176
+Время: 241.7 секунд
+Максимальная загрузка памяти GPU: 0.38 GB
+Новая лучшая модель (AUPRC=0.4176)
+Epoch 13/20
+Train Loss: 0.0537
+Val Loss: 0.1176
+Val F1: 0.3372
+Val AUPRC: 0.4548
+Время: 242.3 секунд
+Максимальная загрузка памяти GPU: 0.38 GB
+Новая лучшая модель (AUPRC=0.4548)
+Epoch 14/20
+Train Loss: 0.0528
+Val Loss: 0.1047
+Val F1: 0.3429
+Val AUPRC: 0.4540
 Время: 242.5 секунд
 Максимальная загрузка памяти GPU: 0.38 GB
-
+Epoch 15/20
+Train Loss: 0.0526
+Val Loss: 0.1265
+Val F1: 0.3402
+Val AUPRC: 0.4153
+Время: 241.7 секунд
+Максимальная загрузка памяти GPU: 0.38 GB
+Epoch 16/20
+Train Loss: 0.0503
+Val Loss: 0.1091
+Val F1: 0.2651
+Val AUPRC: 0.4557
+Время: 241.8 секунд
+Максимальная загрузка памяти GPU: 0.38 GB
+Новая лучшая модель (AUPRC=0.4557)
+Epoch 17/20
+Train Loss: 0.0523
+Val Loss: 0.1104
+Val F1: 0.2773
+Val AUPRC: 0.4248
+Время: 241.4 секунд
+Максимальная загрузка памяти GPU: 0.38 GB
 Epoch 18/20
-Train Loss: 0.0462
-Val Loss: 0.1177
-Val F1: 0.3029
-Val AUPRC: 0.3461
-Время: 242.1 секунд
+Train Loss: 0.0523
+Val Loss: 0.1313
+Val F1: 0.3567
+Val AUPRC: 0.4303
+Время: 241.7 секунд
 Максимальная загрузка памяти GPU: 0.38 GB
-
 Epoch 19/20
-Train Loss: 0.0501
-Val Loss: 0.1024
-Val F1: 0.3682
-Val AUPRC: 0.4836
-Время: 242.6 секунд
+Train Loss: 0.0515
+Val Loss: 0.1277
+Val F1: 0.3207
+Val AUPRC: 0.4268
+Время: 241.7 секунд
 Максимальная загрузка памяти GPU: 0.38 GB
-Новая лучшая модель (AUPRC=0.4836)
-
 Epoch 20/20
-Train Loss: 0.0460
-Val Loss: 0.0936
-Val F1: 0.3287
-Val AUPRC: 0.4546
-Время: 246.1 секунд
+Train Loss: 0.0505
+Val Loss: 0.1109
+Val F1: 0.3286
+Val AUPRC: 0.4445
+Время: 241.9 секунд
 Максимальная загрузка памяти GPU: 0.38 GB
 
-Общее время обучения: 80.9 минут
-Лучшая эпоха: 19 (Val AUPRC: 0.4836)
+Общее время обучения: 80.7 минут
+Лучшая эпоха: 16 (Val AUPRC: 0.4557)
 
 ПЯТЫЙ ЭТАП: ОЦЕНКА
 
 РЕЗУЛЬТАТЫ НА ТЕСТЕ (порог 0.5, дни):
-Precision: 0.3246
-Recall: 0.7625
-F1: 0.4554
-AUROC: 0.9949
-AUPRC: 0.6518
+Precision: 0.2009
+Recall: 0.8276
+F1: 0.3234
+AUROC: 0.9942
+AUPRC: 0.6082
 
 ПОДБОР ПОРОГА НА VAL (user-level, PR-кривая, полный диапазон)
 
 [max(prob)]
-  Лучший порог (val): 0.9921 (val F1 users = 0.8889)
-  Плато: 0.9921–0.9921 (ширина 1)
+  Лучший порог (val): 0.9929 (val F1 users = 0.9474)
+  Плато: 0.9929–0.9929 (ширина 1)
   Топ-5 порогов на val:
-    0.9921: 0.8889
-    0.9762: 0.8421
-    0.9996: 0.8235
-    0.8674: 0.8000
-    0.8584: 0.7619
-  TEST 0.9921: F1 users = 0.8421, P = 1.0000, R = 0.7273, caught = 16/22
+    0.9929: 0.9474
+    0.9882: 0.9000
+    0.9978: 0.8889
+    0.9838: 0.8571
+    0.9995: 0.8235
+  TEST 0.9929: F1 users = 0.7895, P = 0.9375, R = 0.6818, caught = 15/22
 
 [hybrid @=0.4 (max + 0.4*roll3_mean)]
-  Лучший порог (val): 1.2193 (val F1 users = 0.8421)
-  Плато: 1.2193–1.2193 (ширина 1)
+  Лучший порог (val): 1.1309 (val F1 users = 0.8571)
+  Плато: 1.1309–1.1309 (ширина 1)
   Топ-5 порогов на val:
-    1.2193: 0.8421
-    1.0769: 0.8000
-    1.2265: 0.7778
-    0.9854: 0.7619
-    0.8979: 0.7500
-  TEST 1.2193: F1 users = 0.7368, P = 0.8750, R = 0.6364, caught = 14/22
+    1.1309: 0.8571
+    1.1713: 0.8421
+    1.1964: 0.8235
+    0.9764: 0.8182
+    1.1313: 0.8000
+  TEST 1.1309: F1 users = 0.8095, P = 0.8500, R = 0.7727, caught = 17/22
 
 [hybrid @=0.5 (max + 0.5*roll3_mean)]
-  Лучший порог (val): 1.2761 (val F1 users = 0.8421)
-  Плато: 1.2761–1.2761 (ширина 1)
+  Лучший порог (val): 1.1642 (val F1 users = 0.8571)
+  Плато: 1.1642–1.1642 (ширина 1)
   Топ-5 порогов на val:
-    1.2761: 0.8421
-    1.1338: 0.8000
-    1.2832: 0.7778
-    1.0149: 0.7619
-    0.9245: 0.7500
-  TEST 1.2761: F1 users = 0.7368, P = 0.8750, R = 0.6364, caught = 14/22
+    1.1642: 0.8571
+    1.2159: 0.8421
+    1.2455: 0.8235
+    1.0074: 0.8182
+    1.1671: 0.8000
+  TEST 1.1642: F1 users = 0.8095, P = 0.8500, R = 0.7727, caught = 17/22
 
 [isotonic(prob)]
-  Лучший порог (val): 1.0000 (val F1 users = 0.8889)
-  Плато: 1.0000–1.0000 (ширина 1)
+  Лучший порог (val): 0.7647 (val F1 users = 0.9474)
+  Плато: 0.7647–0.7647 (ширина 1)
   Топ-5 порогов на val:
-    1.0000: 0.8889
-    0.6364: 0.8421
-    0.1935: 0.7500
-    0.1489: 0.6429
-    0.0996: 0.5714
-  TEST 1.0000: F1 users = 0.8421, P = 1.0000, R = 0.7273, caught = 16/22
+    0.7647: 0.9474
+    0.6364: 0.9000
+    0.8750: 0.8889
+    0.6000: 0.8571
+    1.0000: 0.8235
+  TEST 0.7647: F1 users = 0.8205, P = 0.9412, R = 0.7273, caught = 16/22
 
-Day-level порог (для справки): 0.8992
+Day-level порог (для справки): 0.9443
 
-Лучшее правило по val F1: max (val=0.8889, test=0.8421)
-best_threshold.npy (rule=max): 0.9921
+Лучшее правило по val F1: max (val=0.9474, test=0.7895)
+best_threshold.npy (rule=max): 0.9929
 
-АНАЛИЗ ОШИБОК (rule=max, threshold=0.9921)
+АНАЛИЗ ОШИБОК (rule=max, threshold=0.9929)
 
-Пропущено аномалий: 198 из 261
-Ложных тревог: 4
-Поймано аномалий: 63
+Пропущено аномалий: 190 из 261
+Ложных тревог: 8
+Поймано аномалий: 71
 
 Примеры ПРОПУЩЕННЫХ аномалий:
-user=AAF0535, day=2010-06-28, len=50, prob=0.7287, score=0.7287
-user=AAF0535, day=2010-06-29, len=51, prob=0.4251, score=0.4251
-user=AAF0535, day=2010-06-30, len=52, prob=0.3574, score=0.3574
-user=AAF0535, day=2010-07-01, len=51, prob=0.5515, score=0.5515
-user=AAF0535, day=2010-07-02, len=50, prob=0.2125, score=0.2125
+user=AAF0535, day=2010-06-28, len=50, prob=0.7653, score=0.7653
+user=AAF0535, day=2010-06-29, len=51, prob=0.5939, score=0.5939
+user=AAF0535, day=2010-06-30, len=52, prob=0.4889, score=0.4889
+user=AAF0535, day=2010-07-01, len=51, prob=0.8236, score=0.8236
+user=AAF0535, day=2010-07-02, len=50, prob=0.9293, score=0.9293
 
 Примеры ПОЙМАННЫХ аномалий (первые 5):
-user=AAF0535, day=2010-07-06, len=45, prob=0.9997, score=0.9997
-user=AAF0535, day=2010-07-15, len=51, prob=0.9987, score=0.9987
-user=AAF0535, day=2010-08-09, len=57, prob=0.9973, score=0.9973
-user=AAF0535, day=2010-08-13, len=56, prob=0.9934, score=0.9934
-user=AKR0057, day=2010-10-12, len=140, prob=0.9990, score=0.9990
+user=AAF0535, day=2010-07-06, len=45, prob=0.9994, score=0.9994
+user=AAF0535, day=2010-07-15, len=51, prob=0.9999, score=0.9999
+user=AAF0535, day=2010-08-09, len=57, prob=0.9936, score=0.9936
+user=AAF0535, day=2010-08-12, len=55, prob=0.9933, score=0.9933
+user=AAF0535, day=2010-08-13, len=56, prob=0.9961, score=0.9961
 
 ПОЛЬЗОВАТЕЛИ С АНОМАЛИЯМИ - СТАТУС (rule=max)
 
         user   аномалий   best_score  пойман?
      HXL0968         32       1.0000       ДА
-     AKR0057         28       0.9999       ДА
-     KRL0501         28       0.9996       ДА
-     IJM0776         28       1.0000       ДА
-     HBO0413         28       0.9999       ДА
-     AAF0535         27       0.9997       ДА
+     AKR0057         28       0.9998       ДА
+     KRL0501         28       0.9991       ДА
+     IJM0776         28       0.9998       ДА
+     HBO0413         28       1.0000       ДА
+     AAF0535         27       0.9999       ДА
      RAR0725         27       1.0000       ДА
-     DIB0285         27       0.9987       ДА
+     DIB0285         27       0.9922      нет
      EHB0824          5       1.0000       ДА
      MYD0978          4       1.0000       ДА
      LJR0523          4       1.0000       ДА
      MAR0955          3       1.0000       ДА
      BTL0226          3       1.0000       ДА
-     BBS0039          2       0.6205      нет
-     CCA0046          2       0.8895      нет
-     BSS0369          2       0.3594      нет
-     CSC0217          2       0.5365      нет
+     BBS0039          2       0.6066      нет
+     CCA0046          2       0.9910      нет
+     BSS0369          2       0.6220      нет
+     CSC0217          2       0.7584      нет
      FTM0406          2       1.0000       ДА
-     JLM0364          2       0.6410      нет
+     JLM0364          2       0.8397      нет
      MAS0025          2       1.0000       ДА
-     MPM0220          2       0.4522      нет
+     MPM0220          2       0.7531      нет
      PPF0435          1       1.0000       ДА
 
 ШЕСТОЙ ЭТАП: СОХРАНЕНИЕ
-Результаты сохранены: D:/dataset/bilstm_results.csv
+Результаты сохранены: D:/dataset/bilstm_results(CURRENT+HISTORY).csv
 Графики сохранены: D:/dataset/bilstm_training.png
 
 Сохраняем версию прогона
-Папка прогона: D:/dataset/runs/2026-11-25_16-10-20_bilstm
-Сохранён: D:/dataset/runs/2026-11-25_16-10-20_bilstm/config.json
-Сохранён: D:/dataset/runs/2026-11-25_16-10-20_bilstm/versions.txt
-Сохранён: D:/dataset/runs/2026-11-25_16-10-20_bilstm/split.json
-Сохранён: D:/dataset/runs/2026-11-25_16-10-20_bilstm/predictions/val_probs.parquet
-Сохранён: D:/dataset/runs/2026-11-25_16-10-20_bilstm/predictions/test_probs.parquet
-Сохранён: D:/dataset/runs/2026-11-25_16-10-20_bilstm/metrics.json
-Сохранён: D:/dataset/runs/2026-11-25_16-10-20_bilstm/threshold.json
-Сохранён: D:/dataset/runs/2026-11-25_16-10-20_bilstm/bilstm_best.pt
-Сохранён: D:/dataset/runs/2026-11-25_16-10-20_bilstm/bilstm.log
-Сохранён: D:/dataset/runs/2026-11-25_16-10-20_bilstm/plots/bilstm_training.png
+Папка прогона: D:/dataset/runs/2026-11-25_23-01-26_bilstm_CURRENT+HISTORY
+Сохранён: D:/dataset/runs/2026-11-25_23-01-26_bilstm_CURRENT+HISTORY/config.json
+Сохранён: D:/dataset/runs/2026-11-25_23-01-26_bilstm_CURRENT+HISTORY/versions.txt
+Сохранён: D:/dataset/runs/2026-11-25_23-01-26_bilstm_CURRENT+HISTORY/split.json
+Сохранён: D:/dataset/runs/2026-11-25_23-01-26_bilstm_CURRENT+HISTORY/predictions/val_probs.parquet
+Сохранён: D:/dataset/runs/2026-11-25_23-01-26_bilstm_CURRENT+HISTORY/predictions/test_probs.parquet
+Сохранён: D:/dataset/runs/2026-11-25_23-01-26_bilstm_CURRENT+HISTORY/metrics.json
+Сохранён: D:/dataset/runs/2026-11-25_23-01-26_bilstm_CURRENT+HISTORY/threshold.json
+Не найден: D:/dataset/bilstm_best_CURRENT+HISTORY.pt
+Сохранён: D:/dataset/runs/2026-11-25_23-01-26_bilstm_CURRENT+HISTORY/bilstm.log
+Не найден: D:/dataset/bilstm_training_CURRENT+HISTORY.png

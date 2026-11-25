@@ -34,12 +34,13 @@ logger.addHandler(console_handler)
 # Дополнительные признаки дня
 EXTRA_COLS = [
     # CURRENT (без http)
-    # 'logon', 'logon_night', 'logoff', 'pc_count', 'usb', 'usb_night', 'files', 'files_night', 'email', 'email_night', 'attached', 'external', 'external_night',
-    # 'night_share_no_http', 'external_share', 'attachment_share', 'weekend', 'usb_per_file',
+    'logon', 'logon_night', 'logoff', 'pc_count', 'usb', 'usb_night', 'files', 'files_night', 'email', 'email_night', 'attached', 'external', 'external_night',
+    'night_share_no_http', 'external_share', 'attachment_share', 'weekend', 'usb_per_file',
     # HISTORY (без  http)
     'coverage_30d', 'previous_observation_gap', 'pct_30d_logon', 'delta_30d_logon', 'pct_30d_usb', 'delta_30d_usb', 'pct_30d_files', 
     'delta_30d_files', 'pct_30d_email', 'delta_30d_email', 'pct_30d_external', 'delta_30d_external', 'pct_30d_pc_count', 
-    'delta_30d_pc_count', 'pct_30d_night_share_no_http', 'delta_30d_night_share_no_http']
+    'delta_30d_pc_count', 'pct_30d_night_share_no_http', 'delta_30d_night_share_no_http'
+]
 N_EXTRA = len(EXTRA_COLS)
 
 class InsiderDataset(Dataset):
@@ -417,7 +418,7 @@ for epoch in range(N_EPOCHS):
         best_val_auprc = val_auprc
         best_epoch = epoch + 1
         patience_counter = 0
-        torch.save(model.state_dict(), "D:/dataset/bilstm_best_HISTORY.pt")
+        torch.save(model.state_dict(), "D:/dataset/bilstm_best.pt")
         logger.info(f"Новая лучшая модель (AUPRC={val_auprc:.4f})")
     else:
         patience_counter += 1
@@ -443,7 +444,7 @@ model_eval = InsiderBiLSTM(
     n_extra=N_EXTRA,
 ).to(device)
 
-model_eval.load_state_dict(torch.load("D:/dataset/bilstm_best_HISTORY.pt"))
+model_eval.load_state_dict(torch.load("D:/dataset/bilstm_best.pt"))
 model_eval.eval()
 
 test_loss, test_probs, test_labels = eval_epoch(model_eval, test_loader, criterion, device)
@@ -568,7 +569,7 @@ for user, row in bad_users_df.iterrows():
 logger.info("\nШЕСТОЙ ЭТАП: СОХРАНЕНИЕ")
 
 results = {
-    'model': 'BiLSTM+HISTORY',
+    'model': 'BiLSTM+CURRENT',
     'hidden_dim': HIDDEN_DIM,
     'n_extra': N_EXTRA,
     'best_rule': best_rule_name,
@@ -586,8 +587,8 @@ for r in [rule_max, rule_hybrid_04, rule_hybrid_05, rule_iso]:
     results[f'{key}_val_f1'] = r['val_f1_users']
     results[f'{key}_test_f1'] = r['test_f1_users']
     results[f'{key}_caught'] = r['caught']
-pd.DataFrame([results]).to_csv("D:/dataset/bilstm_results_HISTORY.csv", index=False)
-logger.info(f"Результаты сохранены: D:/dataset/bilstm_results_HISTORY.csv")
+pd.DataFrame([results]).to_csv("D:/dataset/bilstm_results(CURRENT+HISTORY).csv", index=False)
+logger.info(f"Результаты сохранены: D:/dataset/bilstm_results(CURRENT+HISTORY).csv")
 
 fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
@@ -617,13 +618,13 @@ axes[2].legend()
 axes[2].grid(True)
 
 plt.tight_layout()
-plt.savefig("D:/dataset/bilstm_training_HISTORY.png", dpi=150)
+plt.savefig("D:/dataset/bilstm_training.png", dpi=150)
 plt.close()
-logger.info("Графики сохранены: D:/dataset/bilstm_training_HISTORY.png")
+logger.info("Графики сохранены: D:/dataset/bilstm_training.png")
 
 logger.info('')
 logger.info('Сохраняем версию прогона')
-run_dir = make_run_dir("bilstm_HISTORY")
+run_dir = make_run_dir("bilstm_CURRENT+HISTORY")
 
 config = {
     "model": "BiLSTM",
@@ -646,7 +647,6 @@ config = {
     "hybrid_window": 3,
     "extra_cols": EXTRA_COLS,
     "extra_net_dim": 32,
-    "feature_engineering": "domain_entropy_zpop_v2",
     "best_rule": best_rule_name,
     "random_seed": 42,
 }
@@ -762,6 +762,6 @@ threshold_info = {
 }
 save_threshold(run_dir, threshold_info)
 
-copy_file(run_dir, "D:/dataset/bilstm_best_HISTORY.pt")
+copy_file(run_dir, "D:/dataset/bilstm_best_CURRENT+HISTORY.pt")
 copy_file(run_dir, log_file)
-copy_file(run_dir, "D:/dataset/bilstm_training_HISTORY.png", "plots")
+copy_file(run_dir, "D:/dataset/bilstm_training_CURRENT+HISTORY.png", "plots")

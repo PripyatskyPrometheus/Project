@@ -38,8 +38,20 @@ HTTP_FEATURES = {
     'pct_30d_unique_domains', 'delta_30d_unique_domains'
 }
 
+NO_HTTP_SWAP = {
+    'night_share': 'night_share_no_http',
+    'pct_30d_night_share': 'pct_30d_night_share_no_http',
+    'delta_30d_night_share': 'delta_30d_night_share_no_http',
+}
+
 def strip_http(cols):
-    return [c for c in cols if c not in HTTP_FEATURES]
+    out = []
+    for c in cols:
+        if c in NO_HTTP_SWAP:
+            out.append(NO_HTTP_SWAP[c])
+        elif c not in HTTP_FEATURES:
+            out.append(c)
+    return out
 
 FEATURE_SETS = {
     'all':            {'with_http': CURRENT + HISTORY,       'no_http': strip_http(CURRENT + HISTORY)},
