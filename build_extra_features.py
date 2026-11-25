@@ -109,11 +109,12 @@ def process_email(path):
     return agg
 
 
-def process_http_chunked(path, chunksize=1_000_000):
+def process_http(path, chunksize=1_000_000):
     print("\n5. http")
     t0 = time.time()
-    parts = []
     RISK_PATTERN = r'wikileaks|leak|anonymous|dropbox|drive\.google|mega|cloud|keylog|spy|hack|job|career|indeed|monster'
+    agg_parts = []
+    dom_parts = []  # накапливаем (user, day, domain) -> count
     for chunk in pd.read_csv(path, usecols=['user', 'date', 'url'], chunksize=chunksize):
         day = pd.to_datetime(chunk['date'].str.slice(0, 10), format='%m/%d/%Y').dt.date
         hour = chunk['date'].str.slice(11, 13).astype(np.int32)
@@ -125,23 +126,25 @@ def process_http_chunked(path, chunksize=1_000_000):
         tmp = pd.DataFrame({'user': chunk['user'].values, 'day': day.values,
                             'domain': domains.values, 'is_night': is_night.values,
                             'is_risk': is_risk.values})
-        # агрегаты по (user, day)
-        agg = tmp.groupby(['user', 'day'], as_index=False).agg(
+        agg_parts.append(tmp.groupby(['user', 'day'], as_index=False).agg(
             http=('is_night', 'size'), http_night=('is_night', 'sum'),
-            n_http_risk=('is_risk', 'sum'))
-        # уникальные домены и энтропия
-        dom_agg = tmp.groupby(['user', 'day', 'domain']).size().reset_index(name='cnt')
-        # считаем total и вероятности векторно
-        dom_agg['total'] = dom_agg.groupby(['user', 'day'])['cnt'].transform('sum')
-        dom_agg['p'] = dom_agg['cnt'] / dom_agg['total']
-        dom_agg['plogp'] = -dom_agg['p'] * np.log2(dom_agg['p'])
+            n_http_risk=('is_risk', 'sum')))
+        dom_parts.append(tmp.groupby(['user', 'day', 'domain'], as_index=False).size())
 
-        ent = dom_agg.groupby(['user', 'day'], as_index=False).agg(unique_domains=('domain', 'nunique'),domain_entropy=('plogp', 'sum'))
-        parts.append(agg.merge(ent, on=['user', 'day'], how='left'))
-    final = pd.concat(parts).groupby(['user', 'day'], as_index=False).agg(
-        http=('http', 'sum'), http_night=('http_night', 'sum'),
-        n_http_risk=('n_http_risk', 'sum'),
-        unique_domains=('unique_domains', 'sum'), domain_entropy=('domain_entropy', 'mean'))
+    # объединяем агрегаты по (user, day)
+    agg = pd.concat(agg_parts).groupby(['user', 'day'], as_index=False).sum()
+
+    # объединяем домены по (user, day, domain) — сумма count, потом энтропия один раз
+    dom = pd.concat(dom_parts).groupby(['user', 'day', 'domain'], as_index=False)['size'].sum()
+    dom = dom.rename(columns={'size': 'cnt'})
+    dom['total'] = dom.groupby(['user', 'day'])['cnt'].transform('sum')
+    dom['p'] = dom['cnt'] / dom['total']
+    dom['plogp'] = -dom['p'] * np.log2(dom['p'])
+    ent = dom.groupby(['user', 'day'], as_index=False).agg(
+        unique_domains=('domain', 'nunique'),
+        domain_entropy=('plogp', 'sum'))
+
+    final = agg.merge(ent, on=['user', 'day'], how='left')
     print(f"   {time.time()-t0:.1f} сек, строк: {len(final)}")
     return final
 
@@ -189,7 +192,7 @@ def main():
     df_device = process_device(os.path.join(LABELS_DIR, "device_labeled.csv"))
     df_file = process_file(os.path.join(LABELS_DIR, "file_labeled.csv"))
     df_email = process_email(os.path.join(LABELS_DIR, "email_labeled.csv"))
-    df_http = process_http_chunked(os.path.join(LABELS_DIR, "http_labeled.csv"))
+    df_http = process_http(os.path.join(LABELS_DIR, "http_labeled.csv"))
 
     print("\n6. Merge по (user, day)")
     merged = df_logon
@@ -202,17 +205,21 @@ def main():
     merged['risk_http_share'] = np.where(merged['http'] > 0, merged['n_http_risk'] / merged['http'], 0.0).astype(np.float32)
 
     # night_share — по всем каналам (logon, logoff, usb, files, http, email)
-    total_events = (merged['logon'] + merged['logoff'] + merged['usb'] + merged['files']
-                    + merged['http'] + merged['email'])
-    night_events = (merged['logon_night'] + merged['usb_night'] + merged['files_night']
-                    + merged['http_night'] + merged['email_night'])
+    total_events = (merged['logon'] + merged['logoff'] + merged['usb'] + merged['files'] + merged['http'] + merged['email'])
+    night_events = (merged['logon_night'] + merged['usb_night'] + merged['files_night'] + merged['http_night'] + merged['email_night'])
     merged['night_share'] = np.where(total_events > 0, night_events / total_events, 0.0).astype(np.float32)
     merged['external_share'] = np.where(merged['email'] > 0, merged['external'] / merged['email'], 0.0).astype(np.float32)
     merged['attachment_share'] = np.where(merged['email'] > 0, merged['attached'] / merged['email'], 0.0).astype(np.float32)
     merged['weekend'] = pd.to_datetime(merged['day']).dt.dayofweek.isin([5, 6]).astype(np.int32)
 
-    # фичи
-    ROUTINE = ['logon', 'usb', 'files', 'http', 'email', 'external', 'pc_count', 'night_share', 'unique_domains', 'domain_entropy']
+    # night_share без HTTP (для no_http)
+    total_no_http = merged['logon'] + merged['logoff'] + merged['usb'] + merged['files'] + merged['email']
+    night_no_http = merged['logon_night'] + merged['usb_night'] + merged['files_night'] + merged['email_night']
+    merged['night_share_no_http'] = np.where(total_no_http > 0, night_no_http / total_no_http, 0.0).astype(np.float32)
+
+    ROUTINE = ['logon', 'usb', 'files', 'http', 'email', 'external', 'pc_count', 'night_share', 'night_share_no_http', 'unique_domains', 
+    'domain_entropy']
+
     merged = add_personal_norm(merged, ROUTINE, window_days=30, min_days=5)
 
     merged = merged.sort_values(['user', 'day']).reset_index(drop=True)

@@ -1,173 +1,166 @@
-1. Загрузка данных
-train: has_anomaly {0: 182874, 1: 531}
-val: has_anomaly {0: 46119, 1: 194}
-test: has_anomaly {0: 100473, 1: 261}
-Train: 183405, Val: 46313, Test: 100734
-all: with_http=45, no_http=34
-deep_only: with_http=23, no_http=18
-personal_only: with_http=22, no_http=16
-all_with_http (45 фич)
-Обучение: 3.8 сек (best_iter=87)
-TEST (дни): P=0.7151 R=0.9617 F1=0.8203 AUROC=0.9998 AUPRC=0.9626
+Epoch 16/20
+Train Loss: 0.0500
+Val Loss: 0.1308
+Val F1: 0.3760
+Val AUPRC: 0.4248
+Время: 243.0 секунд
+Максимальная загрузка памяти GPU: 0.38 GB
+
+Epoch 17/20
+Train Loss: 0.0480
+Val Loss: 0.1129
+Val F1: 0.3348
+Val AUPRC: 0.4070
+Время: 242.5 секунд
+Максимальная загрузка памяти GPU: 0.38 GB
+
+Epoch 18/20
+Train Loss: 0.0462
+Val Loss: 0.1177
+Val F1: 0.3029
+Val AUPRC: 0.3461
+Время: 242.1 секунд
+Максимальная загрузка памяти GPU: 0.38 GB
+
+Epoch 19/20
+Train Loss: 0.0501
+Val Loss: 0.1024
+Val F1: 0.3682
+Val AUPRC: 0.4836
+Время: 242.6 секунд
+Максимальная загрузка памяти GPU: 0.38 GB
+Новая лучшая модель (AUPRC=0.4836)
+
+Epoch 20/20
+Train Loss: 0.0460
+Val Loss: 0.0936
+Val F1: 0.3287
+Val AUPRC: 0.4546
+Время: 246.1 секунд
+Максимальная загрузка памяти GPU: 0.38 GB
+
+Общее время обучения: 80.9 минут
+Лучшая эпоха: 19 (Val AUPRC: 0.4836)
+
+ПЯТЫЙ ЭТАП: ОЦЕНКА
+
+РЕЗУЛЬТАТЫ НА ТЕСТЕ (порог 0.5, дни):
+Precision: 0.3246
+Recall: 0.7625
+F1: 0.4554
+AUROC: 0.9949
+AUPRC: 0.6518
+
+ПОДБОР ПОРОГА НА VAL (user-level, PR-кривая, полный диапазон)
 
 [max(prob)]
-Порог (val): 0.4304 (val F1=0.9000)
-TEST 0.4304: F1=0.9167, P=0.8462, R=1.0000, caught=22/22
+  Лучший порог (val): 0.9921 (val F1 users = 0.8889)
+  Плато: 0.9921–0.9921 (ширина 1)
+  Топ-5 порогов на val:
+    0.9921: 0.8889
+    0.9762: 0.8421
+    0.9996: 0.8235
+    0.8674: 0.8000
+    0.8584: 0.7619
+  TEST 0.9921: F1 users = 0.8421, P = 1.0000, R = 0.7273, caught = 16/22
 
-[hybrid_04]
-Порог (val): 0.2904 (val F1=0.9091)
-TEST 0.2904: F1=0.8627, P=0.7586, R=1.0000, caught=22/22
+[hybrid @=0.4 (max + 0.4*roll3_mean)]
+  Лучший порог (val): 1.2193 (val F1 users = 0.8421)
+  Плато: 1.2193–1.2193 (ширина 1)
+  Топ-5 порогов на val:
+    1.2193: 0.8421
+    1.0769: 0.8000
+    1.2265: 0.7778
+    0.9854: 0.7619
+    0.8979: 0.7500
+  TEST 1.2193: F1 users = 0.7368, P = 0.8750, R = 0.6364, caught = 14/22
 
-[hybrid_05]
-Порог (val): 0.3010 (val F1=0.9091)
-TEST 0.3010: F1=0.8627, P=0.7586, R=1.0000, caught=22/22
+[hybrid @=0.5 (max + 0.5*roll3_mean)]
+  Лучший порог (val): 1.2761 (val F1 users = 0.8421)
+  Плато: 1.2761–1.2761 (ширина 1)
+  Топ-5 порогов на val:
+    1.2761: 0.8421
+    1.1338: 0.8000
+    1.2832: 0.7778
+    1.0149: 0.7619
+    0.9245: 0.7500
+  TEST 1.2761: F1 users = 0.7368, P = 0.8750, R = 0.6364, caught = 14/22
 
-[isotonic]
-Порог (val): 0.2222 (val F1=0.9000)
-TEST 0.2222: F1=0.9167, P=0.8462, R=1.0000, caught=22/22
-ЛУЧШЕЕ: hybrid_04 (val=0.9091, test=0.8627)
-Папка прогона: C:/Users/user/dataset/runs/2026-11-25_14-04-18_xgb_all_with_http
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-18_xgb_all_with_http/config.json
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-18_xgb_all_with_http/split.json
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-18_xgb_all_with_http/predictions/val_probs.parquet
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-18_xgb_all_with_http/predictions/test_probs.parquet
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-18_xgb_all_with_http/metrics.json
-all_no_http (34 фич)
-Обучение: 7.6 сек (best_iter=500)
-TEST (дни): P=0.5251 R=0.7203 F1=0.6074 AUROC=0.9954 AUPRC=0.7188
+[isotonic(prob)]
+  Лучший порог (val): 1.0000 (val F1 users = 0.8889)
+  Плато: 1.0000–1.0000 (ширина 1)
+  Топ-5 порогов на val:
+    1.0000: 0.8889
+    0.6364: 0.8421
+    0.1935: 0.7500
+    0.1489: 0.6429
+    0.0996: 0.5714
+  TEST 1.0000: F1 users = 0.8421, P = 1.0000, R = 0.7273, caught = 16/22
 
-[max(prob)]
-Порог (val): 0.6616 (val F1=0.8696)
-TEST 0.6616: F1=0.8444, P=0.8261, R=0.8636, caught=19/22
+Day-level порог (для справки): 0.8992
 
-[hybrid_04]
-Порог (val): 0.7708 (val F1=0.8696)
-TEST 0.7708: F1=0.8444, P=0.8261, R=0.8636, caught=19/22
+Лучшее правило по val F1: max (val=0.8889, test=0.8421)
+best_threshold.npy (rule=max): 0.9921
 
-[hybrid_05]
-Порог (val): 0.7992 (val F1=0.8696)
-TEST 0.7992: F1=0.8444, P=0.8261, R=0.8636, caught=19/22
+АНАЛИЗ ОШИБОК (rule=max, threshold=0.9921)
 
-[isotonic]
-Порог (val): 0.2895 (val F1=0.8696)
-TEST 0.2895: F1=0.8444, P=0.8261, R=0.8636, caught=19/22
-ЛУЧШЕЕ: max (val=0.8696, test=0.8444)
-Папка прогона: C:/Users/user/dataset/runs/2026-11-25_14-04-27_xgb_all_no_http
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-27_xgb_all_no_http/config.json
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-27_xgb_all_no_http/split.json
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-27_xgb_all_no_http/predictions/val_probs.parquet
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-27_xgb_all_no_http/predictions/test_probs.parquet
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-27_xgb_all_no_http/metrics.json
-deep_only_with_http (23 фич)
-Обучение: 5.7 сек (best_iter=331)
-TEST (дни): P=0.2068 R=0.7203 F1=0.3214 AUROC=0.9786 AUPRC=0.5112
+Пропущено аномалий: 198 из 261
+Ложных тревог: 4
+Поймано аномалий: 63
 
-[max(prob)]
-Порог (val): 0.9437 (val F1=0.8421)
-TEST 0.9437: F1=0.6667, P=0.7000, R=0.6364, caught=14/22
+Примеры ПРОПУЩЕННЫХ аномалий:
+user=AAF0535, day=2010-06-28, len=50, prob=0.7287, score=0.7287
+user=AAF0535, day=2010-06-29, len=51, prob=0.4251, score=0.4251
+user=AAF0535, day=2010-06-30, len=52, prob=0.3574, score=0.3574
+user=AAF0535, day=2010-07-01, len=51, prob=0.5515, score=0.5515
+user=AAF0535, day=2010-07-02, len=50, prob=0.2125, score=0.2125
 
-[hybrid_04]
-Порог (val): 1.1196 (val F1=0.8421)
-TEST 1.1196: F1=0.7027, P=0.8667, R=0.5909, caught=13/22
+Примеры ПОЙМАННЫХ аномалий (первые 5):
+user=AAF0535, day=2010-07-06, len=45, prob=0.9997, score=0.9997
+user=AAF0535, day=2010-07-15, len=51, prob=0.9987, score=0.9987
+user=AAF0535, day=2010-08-09, len=57, prob=0.9973, score=0.9973
+user=AAF0535, day=2010-08-13, len=56, prob=0.9934, score=0.9934
+user=AKR0057, day=2010-10-12, len=140, prob=0.9990, score=0.9990
 
-[hybrid_05]
-Порог (val): 1.1526 (val F1=0.8000)
-TEST 1.1526: F1=0.7179, P=0.8235, R=0.6364, caught=14/22
+ПОЛЬЗОВАТЕЛИ С АНОМАЛИЯМИ - СТАТУС (rule=max)
 
-[isotonic]
-Порог (val): 0.9333 (val F1=0.8421)
-TEST 0.9333: F1=0.6667, P=0.7000, R=0.6364, caught=14/22
-ЛУЧШЕЕ: max (val=0.8421, test=0.6667)
-Папка прогона: C:/Users/user/dataset/runs/2026-11-25_14-04-33_xgb_deep_only_with_http
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-33_xgb_deep_only_with_http/config.json
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-33_xgb_deep_only_with_http/split.json
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-33_xgb_deep_only_with_http/predictions/val_probs.parquet
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-33_xgb_deep_only_with_http/predictions/test_probs.parquet
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-33_xgb_deep_only_with_http/metrics.json
-deep_only_no_http (18 фич)
-Обучение: 0.9 сек (best_iter=12)
-TEST (дни): P=0.0000 R=0.0000 F1=0.0000 AUROC=0.9536 AUPRC=0.2441
+        user   аномалий   best_score  пойман?
+     HXL0968         32       1.0000       ДА
+     AKR0057         28       0.9999       ДА
+     KRL0501         28       0.9996       ДА
+     IJM0776         28       1.0000       ДА
+     HBO0413         28       0.9999       ДА
+     AAF0535         27       0.9997       ДА
+     RAR0725         27       1.0000       ДА
+     DIB0285         27       0.9987       ДА
+     EHB0824          5       1.0000       ДА
+     MYD0978          4       1.0000       ДА
+     LJR0523          4       1.0000       ДА
+     MAR0955          3       1.0000       ДА
+     BTL0226          3       1.0000       ДА
+     BBS0039          2       0.6205      нет
+     CCA0046          2       0.8895      нет
+     BSS0369          2       0.3594      нет
+     CSC0217          2       0.5365      нет
+     FTM0406          2       1.0000       ДА
+     JLM0364          2       0.6410      нет
+     MAS0025          2       1.0000       ДА
+     MPM0220          2       0.4522      нет
+     PPF0435          1       1.0000       ДА
 
-[max(prob)]
-Порог (val): 0.3241 (val F1=0.7059)
-TEST 0.3241: F1=0.6531, P=0.5926, R=0.7273, caught=16/22
+ШЕСТОЙ ЭТАП: СОХРАНЕНИЕ
+Результаты сохранены: D:/dataset/bilstm_results.csv
+Графики сохранены: D:/dataset/bilstm_training.png
 
-[hybrid_04]
-Порог (val): 0.4386 (val F1=0.7059)
-TEST 0.4386: F1=0.6977, P=0.7143, R=0.6818, caught=15/22
-
-[hybrid_05]
-Порог (val): 0.4673 (val F1=0.7059)
-TEST 0.4673: F1=0.6829, P=0.7368, R=0.6364, caught=14/22
-
-[isotonic]
-Порог (val): 0.6129 (val F1=0.7059)
-TEST 0.6129: F1=0.6531, P=0.5926, R=0.7273, caught=16/22
-ЛУЧШЕЕ: max (val=0.7059, test=0.6531)
-Папка прогона: C:/Users/user/dataset/runs/2026-11-25_14-04-35_xgb_deep_only_no_http
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-35_xgb_deep_only_no_http/config.json
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-35_xgb_deep_only_no_http/split.json
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-35_xgb_deep_only_no_http/predictions/val_probs.parquet
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-35_xgb_deep_only_no_http/predictions/test_probs.parquet
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-35_xgb_deep_only_no_http/metrics.json
-personal_only_with_http (22 фич)
-Обучение: 3.8 сек (best_iter=257)
-TEST (дни): P=0.8233 R=0.9464 F1=0.8806 AUROC=0.9999 AUPRC=0.9731
-
-[max(prob)]
-Порог (val): 0.4050 (val F1=0.9524)
-TEST 0.4050: F1=0.9565, P=0.9167, R=1.0000, caught=22/22
-
-[hybrid_04]
-Порог (val): 0.4670 (val F1=0.9524)
-TEST 0.4670: F1=0.9565, P=0.9167, R=1.0000, caught=22/22
-
-[hybrid_05]
-Порог (val): 0.4825 (val F1=0.9524)
-TEST 0.4825: F1=0.9565, P=0.9167, R=1.0000, caught=22/22
-
-[isotonic]
-Порог (val): 0.1905 (val F1=0.9474)
-TEST 0.1905: F1=0.9565, P=0.9167, R=1.0000, caught=22/22
-ЛУЧШЕЕ: max (val=0.9524, test=0.9565)
-Папка прогона: C:/Users/user/dataset/runs/2026-11-25_14-04-39_xgb_personal_only_with_http
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-39_xgb_personal_only_with_http/config.json
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-39_xgb_personal_only_with_http/split.json
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-39_xgb_personal_only_with_http/predictions/val_probs.parquet
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-39_xgb_personal_only_with_http/predictions/test_probs.parquet
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-39_xgb_personal_only_with_http/metrics.json
-personal_only_no_http (16 фич)
-Обучение: 2.4 сек (best_iter=168)
-TEST (дни): P=0.4559 R=0.6935 F1=0.5502 AUROC=0.9924 AUPRC=0.6502
-
-[max(prob)]
-Порог (val): 0.9334 (val F1=0.7500)
-TEST 0.9334: F1=0.5625, P=0.9000, R=0.4091, caught=9/22
-
-[hybrid_04]
-Порог (val): 1.0405 (val F1=0.7619)
-TEST 1.0405: F1=0.7692, P=0.8824, R=0.6818, caught=15/22
-
-[hybrid_05]
-Порог (val): 1.1029 (val F1=0.7619)
-TEST 1.1029: F1=0.7222, P=0.9286, R=0.5909, caught=13/22
-
-[isotonic]
-Порог (val): 0.7500 (val F1=0.7500)
-TEST 0.7500: F1=0.6471, P=0.9167, R=0.5000, caught=11/22
-ЛУЧШЕЕ: hybrid_04 (val=0.7619, test=0.7692)
-Папка прогона: C:/Users/user/dataset/runs/2026-11-25_14-04-42_xgb_personal_only_no_http
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-42_xgb_personal_only_no_http/config.json
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-42_xgb_personal_only_no_http/split.json
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-42_xgb_personal_only_no_http/predictions/val_probs.parquet
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-42_xgb_personal_only_no_http/predictions/test_probs.parquet
-Сохранён: C:/Users/user/dataset/runs/2026-11-25_14-04-42_xgb_personal_only_no_http/metrics.json
-ИТОГИ
-name                              AUPRC  F1_days    best_rule   F1_users
-all_with_http                    0.9626   0.8203    hybrid_04     0.8627
-all_no_http                      0.7188   0.6074          max     0.8444
-deep_only_with_http              0.5112   0.3214          max     0.6667
-deep_only_no_http                0.2441   0.0000          max     0.6531
-personal_only_with_http          0.9731   0.8806          max     0.9565
-personal_only_no_http            0.6502   0.5502    hybrid_04     0.7692
-Сводка сохранена: D:/dataset/xgb.csv
+Сохраняем версию прогона
+Папка прогона: D:/dataset/runs/2026-11-25_16-10-20_bilstm
+Сохранён: D:/dataset/runs/2026-11-25_16-10-20_bilstm/config.json
+Сохранён: D:/dataset/runs/2026-11-25_16-10-20_bilstm/versions.txt
+Сохранён: D:/dataset/runs/2026-11-25_16-10-20_bilstm/split.json
+Сохранён: D:/dataset/runs/2026-11-25_16-10-20_bilstm/predictions/val_probs.parquet
+Сохранён: D:/dataset/runs/2026-11-25_16-10-20_bilstm/predictions/test_probs.parquet
+Сохранён: D:/dataset/runs/2026-11-25_16-10-20_bilstm/metrics.json
+Сохранён: D:/dataset/runs/2026-11-25_16-10-20_bilstm/threshold.json
+Сохранён: D:/dataset/runs/2026-11-25_16-10-20_bilstm/bilstm_best.pt
+Сохранён: D:/dataset/runs/2026-11-25_16-10-20_bilstm/bilstm.log
+Сохранён: D:/dataset/runs/2026-11-25_16-10-20_bilstm/plots/bilstm_training.png

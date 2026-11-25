@@ -34,12 +34,12 @@ logger.addHandler(console_handler)
 # Дополнительные признаки дня
 EXTRA_COLS = [
     # CURRENT (без http)
-    'logon', 'logon_night', 'logoff', 'pc_count', 'usb', 'usb_night', 'files', 'files_night', 'email', 'email_night', 'attached', 'external', 'external_night',
-    'night_share', 'external_share', 'attachment_share', 'weekend', 'usb_per_file',
+    # 'logon', 'logon_night', 'logoff', 'pc_count', 'usb', 'usb_night', 'files', 'files_night', 'email', 'email_night', 'attached', 'external', 'external_night',
+    # 'night_share_no_http', 'external_share', 'attachment_share', 'weekend', 'usb_per_file',
     # HISTORY (без  http)
     'coverage_30d', 'previous_observation_gap', 'pct_30d_logon', 'delta_30d_logon', 'pct_30d_usb', 'delta_30d_usb', 'pct_30d_files', 
     'delta_30d_files', 'pct_30d_email', 'delta_30d_email', 'pct_30d_external', 'delta_30d_external', 'pct_30d_pc_count', 
-    'delta_30d_pc_count', 'pct_30d_night_share', 'delta_30d_night_share']
+    'delta_30d_pc_count', 'pct_30d_night_share_no_http', 'delta_30d_night_share_no_http']
 N_EXTRA = len(EXTRA_COLS)
 
 class InsiderDataset(Dataset):
@@ -305,37 +305,13 @@ for name, d in [('train', train_df), ('val', val_df), ('test', test_df)]:
     elif name == 'val': val_df = m
     else: test_df = m
 
-extra_feature_cols = [c for c in extra_df.columns if c not in ('user', 'day')]
-train_df = pd.merge(train_df.drop(columns=extra_feature_cols, errors='ignore'), extra_df, on=['user', 'day'], how='left')
-val_df = pd.merge(val_df.drop(columns=extra_feature_cols, errors='ignore'), extra_df, on=['user', 'day'], how='left')
-test_df = pd.merge(test_df.drop(columns=extra_feature_cols, errors='ignore'), extra_df, on=['user', 'day'], how='left')
-
-for d in (train_df, val_df, test_df):
-    d[extra_feature_cols] = d[extra_feature_cols].fillna(0)
-    # Редкие счётчики и кросс-канальные отношения
-    cnt_email_ext = d['sequence'].apply(lambda seq: sum(1 for t in seq if t == 'email_external'))
-    d['usb_per_file'] = np.where(d['n_file_total'] > 0, d['n_usb_connect'] / d['n_file_total'], d['n_usb_connect'])
-    d['ext_email_share'] = np.where(d['n_email_total'] > 0, cnt_email_ext / d['n_email_total'], 0.0)
-    d['risk_http_share'] = np.where(d['n_http_total'] > 0, d['n_http_risk'] / d['n_http_total'], 0.0)
-    d['log_cnt_http_leak'] = np.log1p(d['sequence'].apply(lambda seq: sum(1 for t in seq if t == 'http_leak')))
-    d['log_cnt_http_job'] = np.log1p(d['sequence'].apply(lambda seq: sum(1 for t in seq if t == 'http_job')))
-    d['log_cnt_file_sensitive'] = np.log1p(d['sequence'].apply(lambda seq: sum(1 for t in seq if t == 'file_sensitive')))
-
-# Популяционные z-score строго по train_df
-for col in ['n_usb_connect', 'n_file_total', 'n_http_total', 'distinct_pcs_real', 'full_length']:
-    m, s = float(train_df[col].mean()), float(train_df[col].std())
-    s = 1.0 if s < 1e-9 else s
-    for d in (train_df, val_df, test_df):
-        d[f'{col}_zpop'] = (d[col] - m) / s
-
-
 # Масштабирование всех EXTRA_COLS для нейросети строго по train_df
 scaler = StandardScaler()
 train_df[EXTRA_COLS] = scaler.fit_transform(train_df[EXTRA_COLS].astype(np.float32))
 val_df[EXTRA_COLS] = scaler.transform(val_df[EXTRA_COLS].astype(np.float32))
 test_df[EXTRA_COLS] = scaler.transform(test_df[EXTRA_COLS].astype(np.float32))
 
-logger.info(f"Доп. признаки ({N_EXTRA}): {EXTRA_COLS}")
+logger.info(f"Доп. признаки ({N_EXTRA}):")
 for c in EXTRA_COLS:
     logger.info(f"  {c}: mean={train_df[c].mean():.3f}, std={train_df[c].std():.3f}")
 
@@ -355,7 +331,7 @@ logger.info(f"Val-батчи: {len(val_loader)}")
 logger.info(f"Test-батчи: {len(test_loader)}")
 
 sample_seq, sample_mask, sample_extra, sample_label = next(iter(train_loader))
-logger.info(f"\nПример батча:")
+logger.info(f"Пример батча:")
 logger.info(f"Sequence shape: {sample_seq.shape}")
 logger.info(f"Mask shape: {sample_mask.shape}")
 logger.info(f"Extra shape: {sample_extra.shape}")
@@ -396,7 +372,7 @@ criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight_tensor)
 
 optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
 
-logger.info(f"\npos_weight={pos_weight_sqrt:.1f}")
+logger.info(f"pos_weight={pos_weight_sqrt:.1f}")
 
 logger.info("\nЧЕТВЕРТЫЙ ЭТАП: ОБУЧЕНИЕ")
 N_EPOCHS = 20
@@ -429,7 +405,7 @@ for epoch in range(N_EPOCHS):
 
     epoch_time = time.time() - epoch_start
 
-    logger.info(f"\nEpoch {epoch+1:2d}/{N_EPOCHS}")
+    logger.info(f"Epoch {epoch+1:2d}/{N_EPOCHS}")
     logger.info(f"Train Loss: {train_loss:.4f}")
     logger.info(f"Val Loss: {val_loss:.4f}")
     logger.info(f"Val F1: {val_f1:.4f}")
@@ -441,7 +417,7 @@ for epoch in range(N_EPOCHS):
         best_val_auprc = val_auprc
         best_epoch = epoch + 1
         patience_counter = 0
-        torch.save(model.state_dict(), "D:/dataset/bilstm_best.pt")
+        torch.save(model.state_dict(), "D:/dataset/bilstm_best_HISTORY.pt")
         logger.info(f"Новая лучшая модель (AUPRC={val_auprc:.4f})")
     else:
         patience_counter += 1
@@ -467,7 +443,7 @@ model_eval = InsiderBiLSTM(
     n_extra=N_EXTRA,
 ).to(device)
 
-model_eval.load_state_dict(torch.load("D:/dataset/bilstm_best.pt"))
+model_eval.load_state_dict(torch.load("D:/dataset/bilstm_best_HISTORY.pt"))
 model_eval.eval()
 
 test_loss, test_probs, test_labels = eval_epoch(model_eval, test_loader, criterion, device)
@@ -592,7 +568,7 @@ for user, row in bad_users_df.iterrows():
 logger.info("\nШЕСТОЙ ЭТАП: СОХРАНЕНИЕ")
 
 results = {
-    'model': 'BiLSTM+full_length_norm',
+    'model': 'BiLSTM+HISTORY',
     'hidden_dim': HIDDEN_DIM,
     'n_extra': N_EXTRA,
     'best_rule': best_rule_name,
@@ -610,8 +586,8 @@ for r in [rule_max, rule_hybrid_04, rule_hybrid_05, rule_iso]:
     results[f'{key}_val_f1'] = r['val_f1_users']
     results[f'{key}_test_f1'] = r['test_f1_users']
     results[f'{key}_caught'] = r['caught']
-pd.DataFrame([results]).to_csv("D:/dataset/bilstm_results.csv", index=False)
-logger.info(f"Результаты сохранены: D:/dataset/bilstm_results.csv")
+pd.DataFrame([results]).to_csv("D:/dataset/bilstm_results_HISTORY.csv", index=False)
+logger.info(f"Результаты сохранены: D:/dataset/bilstm_results_HISTORY.csv")
 
 fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
@@ -641,13 +617,13 @@ axes[2].legend()
 axes[2].grid(True)
 
 plt.tight_layout()
-plt.savefig("D:/dataset/bilstm_training.png", dpi=150)
+plt.savefig("D:/dataset/bilstm_training_HISTORY.png", dpi=150)
 plt.close()
-logger.info("Графики сохранены: D:/dataset/bilstm_training.png")
+logger.info("Графики сохранены: D:/dataset/bilstm_training_HISTORY.png")
 
 logger.info('')
 logger.info('Сохраняем версию прогона')
-run_dir = make_run_dir("bilstm")
+run_dir = make_run_dir("bilstm_HISTORY")
 
 config = {
     "model": "BiLSTM",
@@ -786,6 +762,6 @@ threshold_info = {
 }
 save_threshold(run_dir, threshold_info)
 
-copy_file(run_dir, "D:dataset/bilstm_best.pt")
+copy_file(run_dir, "D:/dataset/bilstm_best_HISTORY.pt")
 copy_file(run_dir, log_file)
-copy_file(run_dir, "D:/dataset/bilstm_training.png", "plots")
+copy_file(run_dir, "D:/dataset/bilstm_training_HISTORY.png", "plots")

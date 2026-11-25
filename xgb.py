@@ -25,26 +25,17 @@ CURRENT = [
 ]
 
 HISTORY = [
-    'coverage_30d', 'previous_observation_gap',
-    'pct_30d_logon', 'delta_30d_logon',
-    'pct_30d_usb', 'delta_30d_usb',
-    'pct_30d_files', 'delta_30d_files',
-    'pct_30d_http', 'delta_30d_http',
-    'pct_30d_email', 'delta_30d_email',
-    'pct_30d_external', 'delta_30d_external',
-    'pct_30d_pc_count', 'delta_30d_pc_count',
-    'pct_30d_night_share', 'delta_30d_night_share',
-    'pct_30d_unique_domains', 'delta_30d_unique_domains',
-    'pct_30d_domain_entropy', 'delta_30d_domain_entropy',
+    'coverage_30d', 'previous_observation_gap', 'pct_30d_logon', 'delta_30d_logon', 'pct_30d_usb', 'delta_30d_usb', 'pct_30d_files',
+    'delta_30d_files', 'pct_30d_http', 'delta_30d_http', 'pct_30d_email', 'delta_30d_email', 'pct_30d_external', 'delta_30d_external',
+    'pct_30d_pc_count', 'delta_30d_pc_count', 'pct_30d_night_share', 'delta_30d_night_share', 'pct_30d_unique_domains', 
+    'delta_30d_unique_domains', 'pct_30d_domain_entropy', 'delta_30d_domain_entropy'
 ]
 
 # HTTP-фичи (убираем в no_http)
 HTTP_FEATURES = {
-    'http', 'http_night', 'n_http_risk', 'risk_http_share',
-    'domain_entropy', 'unique_domains',
-    'pct_30d_http', 'delta_30d_http',
-    'pct_30d_domain_entropy', 'delta_30d_domain_entropy',
-    'pct_30d_unique_domains', 'delta_30d_unique_domains',
+    'http', 'http_night', 'n_http_risk', 'risk_http_share', 'domain_entropy', 'unique_domains',
+    'night_share', 'pct_30d_night_share', 'delta_30d_night_share', 'pct_30d_http', 'delta_30d_http', 'pct_30d_domain_entropy', 'delta_30d_domain_entropy', 
+    'pct_30d_unique_domains', 'delta_30d_unique_domains'
 }
 
 def strip_http(cols):
