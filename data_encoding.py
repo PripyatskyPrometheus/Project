@@ -6,7 +6,7 @@ import pickle
 from sklearn.model_selection import train_test_split
 
 
-BASE_DIR = "C:/Users/user/dataset/"  # поменять при переезде на D:/dataset/
+BASE_DIR = "D:/dataset/"
 
 print("КОДИРОВАНИЕ ТОКЕНОВ И ПОДГОТОВКА ДАННЫХ для обучения")
 

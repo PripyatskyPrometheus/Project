@@ -32,9 +32,14 @@ console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
 # Дополнительные признаки дня
-EXTRA_COLS = ['usb_per_file', 'ext_email_share', 'risk_http_share', 'domain_entropy_norm', 'night_activity_ratio', 'is_weekend', 
-              'n_usb_connect_zpop', 'n_file_total_zpop', 'n_http_total_zpop', 'distinct_pcs_real_zpop', 'full_length_zpop', 
-              'log_cnt_http_leak', 'log_cnt_http_job', 'log_cnt_file_sensitive']
+EXTRA_COLS = [
+    # CURRENT (без http)
+    'logon', 'logon_night', 'logoff', 'pc_count', 'usb', 'usb_night', 'files', 'files_night', 'email', 'email_night', 'attached', 'external', 'external_night',
+    'night_share', 'external_share', 'attachment_share', 'weekend', 'usb_per_file',
+    # HISTORY (без  http)
+    'coverage_30d', 'previous_observation_gap', 'pct_30d_logon', 'delta_30d_logon', 'pct_30d_usb', 'delta_30d_usb', 'pct_30d_files', 
+    'delta_30d_files', 'pct_30d_email', 'delta_30d_email', 'pct_30d_external', 'delta_30d_external', 'pct_30d_pc_count', 
+    'delta_30d_pc_count', 'pct_30d_night_share', 'delta_30d_night_share']
 N_EXTRA = len(EXTRA_COLS)
 
 class InsiderDataset(Dataset):
@@ -270,15 +275,15 @@ if torch.cuda.is_available():
 torch.backends.cudnn.benchmark = True
 logger.info(f"PyTorch: {torch.__version__}")
 
-train_df = pd.read_pickle("C:/Users/user/dataset/train_sequences.pkl")
-val_df = pd.read_pickle("C:/Users/user/dataset/val_sequences.pkl")
-test_df = pd.read_pickle("C:/Users/user/dataset/test_sequences.pkl")
+train_df = pd.read_pickle("D:/dataset/train_sequences.pkl")
+val_df = pd.read_pickle("D:/dataset/val_sequences.pkl")
+test_df = pd.read_pickle("D:/dataset/test_sequences.pkl")
 
-with open("C:/Users/user/dataset/token_to_id.pkl", 'rb') as f:
+with open("D:/dataset/token_to_id.pkl", 'rb') as f:
     token_to_id = pickle.load(f)
 
-token_weights = np.load("C:/Users/user/dataset/token_weights.npy")
-pos_weight = np.load("C:/Users/user/dataset/pos_weight.npy")[0]
+token_weights = np.load("D:/dataset/token_weights.npy")
+pos_weight = np.load("D:/dataset/pos_weight.npy")[0]
 pos_weight_sqrt = np.sqrt(pos_weight)
 
 logger.info(f"\nTrain: {len(train_df)} (user, day) ({train_df['has_anomaly'].sum()} аномалий)")
@@ -287,9 +292,18 @@ logger.info(f"Test: {len(test_df)} (user, day) ({test_df['has_anomaly'].sum()} �
 logger.info(f"Размер словаря: {len(token_to_id)}")
 logger.info(f"pos_weight: {pos_weight:.1f} -> sqrt(pos_weight): {pos_weight_sqrt:.1f}")
 
-extra_df = pd.read_parquet("C:/Users/user/dataset/extra_day_features.parquet") # на Kaggle поменять путь!
+extra_df = pd.read_parquet("D:/dataset/extra_day_features.parquet")
+extra_df = extra_df.drop(columns=['has_anomaly'], errors='ignore')
 for d in (train_df, val_df, test_df, extra_df):
     d['day'] = pd.to_datetime(d['day']).dt.date
+extra_cols_all = [c for c in extra_df.columns if c not in ('user', 'day')]
+for name, d in [('train', train_df), ('val', val_df), ('test', test_df)]:
+    d = d.drop(columns=extra_cols_all, errors='ignore')
+    m = d.merge(extra_df, on=['user', 'day'], how='left')
+    m[extra_cols_all] = m[extra_cols_all].fillna(0)
+    if name == 'train': train_df = m
+    elif name == 'val': val_df = m
+    else: test_df = m
 
 extra_feature_cols = [c for c in extra_df.columns if c not in ('user', 'day')]
 train_df = pd.merge(train_df.drop(columns=extra_feature_cols, errors='ignore'), extra_df, on=['user', 'day'], how='left')
@@ -313,6 +327,7 @@ for col in ['n_usb_connect', 'n_file_total', 'n_http_total', 'distinct_pcs_real'
     s = 1.0 if s < 1e-9 else s
     for d in (train_df, val_df, test_df):
         d[f'{col}_zpop'] = (d[col] - m) / s
+
 
 # Масштабирование всех EXTRA_COLS для нейросети строго по train_df
 scaler = StandardScaler()
@@ -426,7 +441,7 @@ for epoch in range(N_EPOCHS):
         best_val_auprc = val_auprc
         best_epoch = epoch + 1
         patience_counter = 0
-        torch.save(model.state_dict(), "C:/Users/user/dataset/bilstm_best.pt")
+        torch.save(model.state_dict(), "D:/dataset/bilstm_best.pt")
         logger.info(f"Новая лучшая модель (AUPRC={val_auprc:.4f})")
     else:
         patience_counter += 1
@@ -452,7 +467,7 @@ model_eval = InsiderBiLSTM(
     n_extra=N_EXTRA,
 ).to(device)
 
-model_eval.load_state_dict(torch.load("C:/Users/user/dataset/bilstm_best.pt"))
+model_eval.load_state_dict(torch.load("D:/dataset/bilstm_best.pt"))
 model_eval.eval()
 
 test_loss, test_probs, test_labels = eval_epoch(model_eval, test_loader, criterion, device)
@@ -498,7 +513,7 @@ for alpha, tag in [(0.4, '@=0.4'), (0.5, '@=0.5')]:
     else:
         rule_hybrid_05 = r
 
-# isotonic-калибровка (precision-режим)
+# isotonic-калибровка 
 iso = IsotonicRegression(out_of_bounds='clip')
 iso.fit(val_df_eval['prob'].values, val_df_eval['has_anomaly'].values)
 val_df_eval['prob_iso'] = iso.predict(val_df_eval['prob'].values)
@@ -519,7 +534,7 @@ logger.info(f"\nЛучшее правило по val F1: {best_rule_name} "
             f"(val={best_rule['val_f1_users']:.4f}, "
             f"test={best_rule['test_f1_users']:.4f})")
 
-np.save("C:/Users/user/dataset/best_threshold.npy", np.array([best_threshold]))
+np.save("D:/dataset/best_threshold.npy", np.array([best_threshold]))
 logger.info(f"best_threshold.npy (rule={best_rule_name}): {best_threshold:.4f}")
 
 # Анализ ошибок — по лучшему правилу
@@ -595,8 +610,8 @@ for r in [rule_max, rule_hybrid_04, rule_hybrid_05, rule_iso]:
     results[f'{key}_val_f1'] = r['val_f1_users']
     results[f'{key}_test_f1'] = r['test_f1_users']
     results[f'{key}_caught'] = r['caught']
-pd.DataFrame([results]).to_csv("C:/Users/user/dataset/bilstm_results.csv", index=False)
-logger.info(f"Результаты сохранены: C:/Users/user/dataset/bilstm_results.csv")
+pd.DataFrame([results]).to_csv("D:/dataset/bilstm_results.csv", index=False)
+logger.info(f"Результаты сохранены: D:/dataset/bilstm_results.csv")
 
 fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
@@ -626,9 +641,9 @@ axes[2].legend()
 axes[2].grid(True)
 
 plt.tight_layout()
-plt.savefig("C:/Users/user/dataset/bilstm_training.png", dpi=150)
+plt.savefig("D:/dataset/bilstm_training.png", dpi=150)
 plt.close()
-logger.info("Графики сохранены: C:/Users/user/dataset/bilstm_training.png")
+logger.info("Графики сохранены: D:/dataset/bilstm_training.png")
 
 logger.info('')
 logger.info('Сохраняем версию прогона')
@@ -662,13 +677,13 @@ config = {
 save_config(run_dir, config)
 
 data_files = {
-    "train_sequences": "C:/Users/user/dataset/train_sequences.pkl",
-    "val_sequences": "C:/Users/user/dataset/val_sequences.pkl",
-    "test_sequences": "C:/Users/user/dataset/test_sequences.pkl",
-    "token_to_id": "C:/Users/user/dataset/token_to_id.pkl",
-    "token_weights": "C:/Users/user/dataset/token_weights.npy",
-    "pos_weight": "C:/Users/user/dataset/pos_weight.npy",
-    "extra_day_features": "C:/Users/user/dataset/extra_day_features.parquet"
+    "train_sequences": "D:/dataset/train_sequences.pkl",
+    "val_sequences": "D:/dataset/val_sequences.pkl",
+    "test_sequences": "D:/dataset/test_sequences.pkl",
+    "token_to_id": "D:/dataset/token_to_id.pkl",
+    "token_weights": "D:/dataset/token_weights.npy",
+    "pos_weight": "D:/dataset/pos_weight.npy",
+    "extra_day_features": "D:/dataset/extra_day_features.parquet"
 }
 code_files = {
     "BiLSTM.py": "C:/Users/User/Project/BiLSTM.py",
@@ -771,6 +786,6 @@ threshold_info = {
 }
 save_threshold(run_dir, threshold_info)
 
-copy_file(run_dir, "C:/Users/user/dataset/bilstm_best.pt")
+copy_file(run_dir, "D:dataset/bilstm_best.pt")
 copy_file(run_dir, log_file)
-copy_file(run_dir, "C:/Users/user/dataset/bilstm_training.png", "plots")
+copy_file(run_dir, "D:/dataset/bilstm_training.png", "plots")

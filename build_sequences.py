@@ -5,9 +5,6 @@ import time
 import os
 import re
 
-# data_path = "D:/dataset/labels/"
-# output_path = "D:/dataset/"
-
 data_path = "D:/dataset/labels/"
 output_path = "D:/dataset/"
 
